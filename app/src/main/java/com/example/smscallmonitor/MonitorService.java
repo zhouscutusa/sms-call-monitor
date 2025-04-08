@@ -12,7 +12,7 @@ public class MonitorService extends Service {
     public static final String ACTION_PROCESS_SMS = "PROCESS_SMS";
     public static final String ACTION_PROCESS_CALL = "PROCESS_CALL";
 
-    private static final int IDLE_TIME = 5 * 60 * 1000;  // 5分钟（600000毫秒）
+    private static final int IDLE_TIME = 5 * 60 * 1000;  // 5分钟（300000毫秒）
     private static final int WAIT_WIFI_TIME = 35 * 1000;  // 等待Wi-Fi连接35秒
     private Handler handler = new Handler();
     private boolean isWifiEnabled = false;  // 跟踪Wi-Fi状态
@@ -48,14 +48,19 @@ public class MonitorService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent == null) return START_NOT_STICKY;
+
         String action = intent.getAction();
+        String simInfo = intent.getStringExtra("simInfo");
+        if (simInfo == null) simInfo = "未知SIM卡";
+
         if (ACTION_PROCESS_SMS.equals(action)) {
             String sender = intent.getStringExtra("sender");
             String content = intent.getStringExtra("content");
-            sendNotification("短信", sender + ": " + content);
+            sendNotification("短信 (" + simInfo + ")", sender + ": " + content);
         } else if (ACTION_PROCESS_CALL.equals(action)) {
             String number = intent.getStringExtra("incomingNumber");
-            sendNotification("来电", "未接来电: " + number);
+            sendNotification("未接来电 (" + simInfo + ")", "号码: " + number);
         }
         return START_NOT_STICKY;
     }
@@ -85,10 +90,10 @@ public class MonitorService extends Service {
         handler.postDelayed(wifiOffRunnable, IDLE_TIME);  // 设置新的定时任务
     }
 
-    // 等待Wi-Fi连接，最多等30秒
+    // 等待Wi-Fi连接，最多等35秒
     private boolean waitUntilConnected() {
         ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
-        for (int i = 0; i < WAIT_WIFI_TIME; i++) {  // 最多等30秒
+        for (int i = 0; i < WAIT_WIFI_TIME/1000; i++) {  // 最多等35秒
             NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
             if (activeNetwork != null && activeNetwork.isConnected()) {
                 return true;
