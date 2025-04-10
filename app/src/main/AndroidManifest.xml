@@ -1,19 +1,37 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.smscallmonitor">
 
+    <!-- 基本通信权限 -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
+
+    <!-- 网络权限 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
 
-    <!-- 声明可选的电话硬件功能 -->
+    <!-- Wi-Fi 控制权限 (限制 CHANGE_WIFI_STATE 到 API 28) -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"
+        android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- 前台服务和启动权限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/> <!-- 确保这个权限存在 -->
+
+    <!-- Android 13+ 通知权限 (你原来已有) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- 新增: AlarmManager 权限 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+
+    <!-- 声明可选的硬件功能 -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.wifi" android:required="false" /> <!-- 新增: Wi-Fi 功能 -->
+
 
     <!-- 网络安全配置，适用于 Android 9 -->
     <application
@@ -23,7 +41,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+        android:theme="@style/Theme.AppCompat.Light.DarkActionBar"> <!-- 确保 @style/Theme.AppCompat.Light.DarkActionBar 存在于你的 styles.xml -->
 
         <activity android:name=".MainActivity"
             android:exported="true">
@@ -37,9 +55,11 @@
             android:enabled="true"
             android:exported="false" />
 
+        <!-- 修改: 添加 SMS 广播权限 -->
         <receiver android:name=".SmsReceiver"
+            android:permission="android.permission.BROADCAST_SMS"
             android:exported="true">
-            <intent-filter>
+            <intent-filter android:priority="999"> <!-- 保留或添加优先级 -->
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
@@ -51,12 +71,20 @@
             </intent-filter>
         </receiver>
 
+        <!-- 修改: 明确 enabled=true -->
         <receiver android:name=".BootReceiver"
+            android:enabled="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!-- 新增: 注册 WifiOffReceiver -->
+        <receiver
+            android:name=".WifiOffReceiver"
+            android:enabled="true"
+            android:exported="false" />
 
     </application>
 </manifest>
