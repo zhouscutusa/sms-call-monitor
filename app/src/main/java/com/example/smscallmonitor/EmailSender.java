@@ -28,7 +28,9 @@ public class EmailSender {
             message.setRecipients(Message.RecipientType.TO,
                     InternetAddress.parse("接收邮箱1@gmail.com,接收邮箱2@gmail.com,接收邮箱3@gmail.com"));
             message.setSubject(subject);
-            message.setText(body);
+//            message.setText(body);
+            // html email body:
+            message.setContent(body, "text/html;charset=UTF-8");
 
             Transport.send(message);
             System.out.println("✅ 邮件发送成功！");

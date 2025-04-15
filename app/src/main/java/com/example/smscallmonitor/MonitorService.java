@@ -17,6 +17,7 @@ import android.util.Log;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -110,7 +111,7 @@ public class MonitorService extends Service {
                 int subId = intent.getIntExtra("subId", SubscriptionManager.INVALID_SUBSCRIPTION_ID);
                 String simInfo = getSimInfo(this, subId);
                 Log.d(TAG, ">>> Processing SMS on " + simInfo + " from " + sender);
-                sendNotification("短信 (" + simInfo + ")", sender + ": " + content);
+                sendNotification("短信 (" + simInfo + ")", formatEmailBody(sender, content, TimeUtil.getFormattedTimeFromDate(new Date()), subId, "sms", simInfo));
             } else {
                 Log.w(TAG, ">>> onStartCommand received unhandled action: " + action);
             }
@@ -120,6 +121,89 @@ public class MonitorService extends Service {
             // resetWifiOffSchedule();
         }
         return START_STICKY;
+    }
+
+    private String formatEmailBody(String sender, String content, String time, int subId, String actionType, String simInfo) {
+//        String emailFormat = "<table border=\"1\" width=\"100%\"><tr><th width=\"200\">Time</th><th width=\"200\">From</th><th>Content</th></tr><tr><td align=\"center\">{time}</td><td>{sender}</td><td>{content}</td></tr></table>";
+//        String emailFormat = "<table border=\"1\">\n" +
+//                "  <colgroup>\n" +
+//                "    <col style=\"background-color: #ddfffc\"/>\n" +
+//                "    <col style=\"background-color: #e9ffdd\"/>\n" +
+//                "    <col span=\"1\" />\n" +
+//                "  </colgroup>\n" +
+//                "  <tr>\n" +
+//                "    <td style=\"padding: 8px 6px\">Time</td>\n" +
+//                "    <td style=\"padding: 8px 6px\">{time}</td>\n" +
+//                "  </tr>\n" +
+//                "  <tr>\n" +
+//                "    <td style=\"padding: 8px 6px\">From</td>\n" +
+//                "    <td style=\"padding: 8px 6px\">{sender}</td>\n" +
+//                "  </tr>\n" +
+//                "  <tr>\n" +
+//                "    <td style=\"padding: 8px 6px\">Content</td>\n" +
+//                "    <td style=\"padding: 8px 6px\">{content}</td>\n" +
+//                "  </tr>\n" +
+//                "</table>";
+        String emailFormatPre ="<table border=\"1\">\n" +
+                "  <colgroup>\n" +
+                "    <col style=\"background-color: #ddfffc\"/>\n" +
+                "    <col style=\"background-color: #e9ffdd\"/>\n" +
+                "    <col span=\"2\" />\n" +
+                "  </colgroup>\n" +
+                "  <tr>\n" +
+                "    <td style=\"padding: 8px 6px\">Time</td>\n" +
+                "    <td style=\"padding: 8px 6px\">{time}</td>\n" +
+                "  </tr>\n" +
+                "  <tr>\n" +
+                "    <td style=\"padding: 8px 6px\">Type</td>\n" +
+                "    <td style=\"padding: 8px 6px\"><span style=\"color: {actionTypeColor}\">{actionTypeName}</span></td>\n" +
+                "  </tr>\n" +
+                "  <tr>\n" +
+                "    <td style=\"padding: 8px 6px\">From</td>\n" +
+                "    <td style=\"padding: 8px 6px\">{sender}</td>\n" +
+                "  </tr>" +
+                "  <tr>\n" +
+                "    <td style=\"padding: 8px 6px\">To</td>\n" +
+                "    <td style=\"padding: 8px 6px;background-color: {simNumColor}\">sim{subId}: {simInfo}</td>\n" +
+                "  </tr>";
+        String emailFormatContentRow ="<tr>\n" +
+                "    <td style=\"padding: 8px 6px\">Content</td>\n" +
+                "    <td colspan=\"2\" style=\"padding: 8px 6px\">{content}</td>\n" +
+                "  </tr>";
+        String emailFormatSuffix ="</table>";
+
+        String actionTypeNameSms = "收到短信";
+        String actionTypeColorSms = "#00a000";
+        String actionTypeNameCall = "未接来电";
+        String actionTypeColorCall = "#ff0000";
+        String simNumColor1 = "#cdbaff";
+        String simNumColor2 = "#ffbaba";
+
+        String actionTypeName = actionTypeNameSms;
+        String actionTypeColor = actionTypeColorSms;
+        String simNumColor = "#000000";
+
+        if("call".equalsIgnoreCase(actionType)) {
+            emailFormatContentRow ="";
+            actionTypeName = actionTypeNameCall;
+            actionTypeColor = actionTypeColorCall;
+        }
+        if(1 == subId % 2) {
+            simNumColor = simNumColor1;
+        } else if(0 == subId % 2) {
+            simNumColor = simNumColor2;
+        }
+
+        String emailFormat = emailFormatPre + emailFormatContentRow + emailFormatSuffix;
+        emailFormat = emailFormat.replaceAll("\\{time\\}", time);
+        emailFormat = emailFormat.replaceAll("\\{sender\\}", sender);
+        emailFormat = emailFormat.replaceAll("\\{content\\}", content);
+        emailFormat = emailFormat.replaceAll("\\{actionTypeName\\}", actionTypeName);
+        emailFormat = emailFormat.replaceAll("\\{actionTypeColor\\}", actionTypeColor);
+        emailFormat = emailFormat.replaceAll("\\{simNumColor\\}", simNumColor);
+        emailFormat = emailFormat.replaceAll("\\{subId\\}", String.valueOf(subId));
+        emailFormat = emailFormat.replaceAll("\\{simInfo\\}", simInfo);
+        return emailFormat;
     }
 
     // --- startMonitoring ---
@@ -197,7 +281,7 @@ public class MonitorService extends Service {
         if (now - lastProcessedTime > MISSED_CALL_DEBOUNCE_MS) {
             processedMissedCalls.put(callKey, now);
             Log.i(TAG, ">>> Confirmed Missed Call (passed debounce) on " + simDisplayName + " from: " + incomingNumber);
-            sendNotification("未接来电 (" + simDisplayName + ")", "号码: " + incomingNumber);
+            sendNotification("未接来电 (" + simDisplayName + ")", formatEmailBody(incomingNumber, "未接来电", TimeUtil.getFormattedTimeFromDate(new Date()), subId, "call", simDisplayName));
         } else { Log.d(TAG, ">>> Debounced duplicate missed call event for key: " + callKey); }
     }
 
