@@ -14,6 +14,13 @@ android {
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        // Java 注解处理器参数 (如果 Room 出现特定警告可能需要)
+        // javaCompileOptions {
+        //     annotationProcessorOptions {
+        //         arguments += ["room.schemaLocation": "$projectDir/schemas".toString()]
+        //     }
+        // }
     }
 
     buildTypes {
@@ -26,13 +33,20 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+
+    // --- 合并并改进 packagingOptions ---
     packagingOptions {
-        exclude 'META-INF/NOTICE.md'
+        resources { // 使用 resources 块
+            // 排除常见的许可证和通知文件冲突
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+            excludes += 'META-INF/NOTICE.md'
+            // 对于 LICENSE.md，选择第一个找到的
+            pickFirsts += 'META-INF/LICENSE.md'
+        }
     }
-    packagingOptions {
-        pickFirst 'META-INF/LICENSE.md'
-    }
-}
+    // --- 合并结束 ---
+
+} // android 块结束
 
 dependencies {
 
@@ -43,6 +57,15 @@ dependencies {
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core
+
+    // 保持你原来的 JavaMail 依赖别名
     implementation libs.android.mail
     implementation libs.android.activation
+
+    // --- 新增 Room 和 WorkManager 依赖 ---
+    // 注意这里的别名 libs.androidx.room.runtime 等需要与 libs.versions.toml 中定义的键完全匹配
+    implementation libs.androidx.room.runtime       // Room 运行时库
+    annotationProcessor libs.androidx.room.compiler // Room 注解处理器 (必需)
+    implementation libs.androidx.work.runtime       // WorkManager 运行时库
+    // --- 新增结束 ---
 }

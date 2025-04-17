@@ -23,7 +23,6 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
     private boolean serviceRunning = false; // 简单状态标记
-    private static final int PERMISSION_REQUEST_CODE = 100;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -98,7 +97,7 @@ public class MainActivity extends AppCompatActivity {
 
         if (!permissionsToRequest.isEmpty()) {
             Log.d(TAG, "Requesting permissions: " + permissionsToRequest);
-            ActivityCompat.requestPermissions(this, permissionsToRequest.toArray(new String[0]), PERMISSION_REQUEST_CODE);
+            ActivityCompat.requestPermissions(this, permissionsToRequest.toArray(new String[0]), IConstants.PERMISSION_REQUEST_CODE);
         } else {
             Log.d(TAG, "All required permissions are already granted.");
         }
@@ -108,7 +107,7 @@ public class MainActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         Log.d(TAG, "onRequestPermissionsResult: requestCode=" + requestCode);
-        if (requestCode == PERMISSION_REQUEST_CODE) {
+        if (requestCode == IConstants.PERMISSION_REQUEST_CODE) {
             boolean allGranted = true;
             for (int i = 0; i < grantResults.length; i++) {
                 if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
@@ -132,13 +131,7 @@ public class MainActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
-        PendingIntent pendingIntent = PendingIntent.getBroadcast(context, MonitorService.WIFI_OFF_ALARM_REQUEST_CODE, intent, flags);
-
-        if (alarmManager != null && pendingIntent != null) {
-            alarmManager.cancel(pendingIntent);
-            Log.d(TAG, ">>> Cancelled alarm via Activity.");
-        } else {
-            Log.w(TAG, ">>> Failed to get AlarmManager or PendingIntent in Activity to cancel alarm.");
-        }
+        PendingIntent wifiOffPendingIntent = PendingIntent.getBroadcast(context, IConstants.WIFI_OFF_ALARM_REQUEST_CODE, intent, flags);
+        EventSendHelper.cancelWifiOffAlarm(alarmManager, wifiOffPendingIntent);
     }
 }

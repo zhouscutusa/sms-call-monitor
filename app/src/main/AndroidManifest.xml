@@ -3,37 +3,52 @@
 
     <!-- 基本通信权限 -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- 接收短信 -->
     <uses-permission android:name="android.permission.READ_SMS" />
+    <!-- 读取短信 (某些情况需要) -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- 读取电话状态 (监听来电) -->
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <!-- 读取通话记录 (获取未接号码) -->
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
+    <!-- 读取电话号码 (Android O+ 可能需要) -->
 
     <!-- 网络权限 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 访问互联网 (发邮件) -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 检查网络连接状态 -->
 
     <!-- Wi-Fi 控制权限 (限制 CHANGE_WIFI_STATE 到 API 28) -->
+    <!-- 重要: maxSdkVersion="28" 确保此权限只在 Android 9 及以下版本请求和使用 -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"
         android:maxSdkVersion="28" />
+    <!-- 修改 Wi-Fi 开/关状态 -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- 检查 Wi-Fi 状态 -->
 
     <!-- 前台服务和启动权限 -->
+    <!-- Android P (API 28) 及以上版本运行前台服务需要此权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/> <!-- 确保这个权限存在 -->
+    <!-- 允许应用在设备启动完成后接收广播 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
-    <!-- Android 13+ 通知权限 (你原来已有) -->
+    <!-- Android 13+ (API 33) 发送通知权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
-    <!-- 新增: AlarmManager 权限 -->
+    <!-- AlarmManager 权限 -->
+    <!-- 虽然使用的是 set() 而非 setExact()，保留此权限以兼容不同设备和未来目标版本可能出现的限制 -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
 
-    <!-- 声明可选的硬件功能 -->
-    <uses-feature android:name="android.hardware.telephony" android:required="false" />
-    <uses-feature android:name="android.hardware.wifi" android:required="false" /> <!-- 新增: Wi-Fi 功能 -->
+    <!-- 声明应用需要的硬件功能 -->
+    <!-- 电话功能是核心，设为必需 -->
+    <uses-feature android:name="android.hardware.telephony" android:required="true" />
+    <!-- Wi-Fi 功能不是绝对必需 (虽然核心功能需要)，设为非必需 -->
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
 
 
-    <!-- 网络安全配置，适用于 Android 9 -->
+    <!-- 应用配置 -->
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -41,50 +56,70 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.AppCompat.Light.DarkActionBar"> <!-- 确保 @style/Theme.AppCompat.Light.DarkActionBar 存在于你的 styles.xml -->
+        android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+        <!-- 应用名称: SMS Call Monitor -->
+        <!-- 应用主题: Theme.AppCompat.Light.DarkActionBar -->
+        <!-- usesCleartextTraffic: 允许 HTTP 通信，调试时可能需要，生产环境连接 Gmail 应使用 TLS -->
 
+        <!-- 主活动 -->
         <activity android:name=".MainActivity"
             android:exported="true">
+            <!-- exported=true 以允许启动器启动 -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
+        <!-- 核心监控服务 -->
         <service android:name=".MonitorService"
             android:enabled="true"
             android:exported="false" />
+        <!-- exported=false: 服务不需要被外部应用启动 -->
+        <!-- foregroundServiceType: 为 Android Q+ 指定前台服务类型 -->
 
-        <!-- 修改: 添加 SMS 广播权限 -->
+        <!-- 短信接收器 -->
         <receiver android:name=".SmsReceiver"
             android:permission="android.permission.BROADCAST_SMS"
             android:exported="true">
-            <intent-filter android:priority="999"> <!-- 保留或添加优先级 -->
+            <!-- permission: 限制只有系统可以发送此广播 -->
+            <!-- exported=true: 必须导出才能接收系统广播 -->
+            <intent-filter android:priority="999">
+                <!-- priority: 设置高优先级以优先处理 -->
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+                <!-- 监听短信接收 Action -->
             </intent-filter>
         </receiver>
 
+        <!-- 电话状态接收器 -->
         <receiver android:name=".PhoneStateReceiver"
             android:exported="true">
+            <!-- exported=true: 必须导出才能接收系统广播 -->
             <intent-filter>
                 <action android:name="android.intent.action.PHONE_STATE" />
+                <!-- 监听电话状态变化 Action -->
             </intent-filter>
         </receiver>
 
-        <!-- 修改: 明确 enabled=true -->
+        <!-- 开机启动接收器 -->
         <receiver android:name=".BootReceiver"
             android:enabled="true"
             android:exported="true">
+            <!-- exported=true: 必须导出才能接收系统广播 -->
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <!-- 监听开机完成 Action -->
             </intent-filter>
         </receiver>
 
-        <!-- 新增: 注册 WifiOffReceiver -->
+        <!-- Wi-Fi 关闭接收器 -->
         <receiver
             android:name=".WifiOffReceiver"
             android:enabled="true"
             android:exported="false" />
+        <!-- 内部使用的接收器，不需要导出 -->
+
+        <!-- WorkManager 会自动处理其服务和接收器的注册，无需在此显式声明 Worker -->
 
     </application>
 </manifest>

@@ -1,6 +1,8 @@
 [versions]
 agp = "8.9.1"
-androidActivation = "1.6.6"
+# androidActivation = "1.6.6" # 你提供的版本
+# 建议使用一个统一的变量名，并更新到常用版本，如果你确定要用 1.6.6，可以改回去
+javaxMail = "1.6.7" # 使用 1.6.7 或保留 1.6.6
 junit = "4.13.2"
 junitVersion = "1.1.5"
 espressoCore = "3.5.1"
@@ -8,10 +10,14 @@ appcompat = "1.6.1"
 material = "1.10.0"
 activity = "1.8.0"
 constraintlayout = "2.1.4"
+# --- 新增版本 ---
+room = "2.6.1" # Room 的推荐稳定版本
+work = "2.9.0" # WorkManager 的推荐稳定版本
 
 [libraries]
-android-activation = { module = "com.sun.mail:android-activation", version.ref = "androidActivation" }
-android-mail = { module = "com.sun.mail:android-mail", version.ref = "androidActivation" }
+# 使用 version.ref = "javaxMail" 或 "androidActivation" (如果你保留1.6.6)
+android-activation = { module = "com.sun.mail:android-activation", version.ref = "javaxMail" }
+android-mail = { module = "com.sun.mail:android-mail", version.ref = "javaxMail" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
@@ -20,6 +26,14 @@ material = { group = "com.google.android.material", name = "material", version.r
 activity = { group = "androidx.activity", name = "activity", version.ref = "activity" }
 constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 
+# --- 新增库定义 ---
+# Room (使用 androidx-room-runtime 和 androidx-room-compiler 作为别名/键)
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+
+# WorkManager (使用 androidx-work-runtime 作为别名/键)
+androidx-work-runtime = { group = "androidx.work", name = "work-runtime", version.ref = "work" }
+# --- 新增结束 ---
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-

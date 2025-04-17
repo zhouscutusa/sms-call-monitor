@@ -5,9 +5,11 @@ import android.annotation.SuppressLint;
 import android.app.*;
 import android.content.*;
 import android.content.pm.PackageManager;
-import android.net.*;
-import android.net.wifi.WifiManager;
+import android.net.*; // 引入网络相关类
+import android.net.wifi.WifiManager; // 引入 WifiManager
 import android.os.*;
+// 移除 Handler 和 Looper
+import android.provider.Telephony; // 引入 Telephony 用于 Action
 import android.telephony.PhoneStateListener;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
@@ -16,78 +18,97 @@ import android.util.Log;
 
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
+import androidx.work.ExistingPeriodicWorkPolicy; // 引入 WorkManager 类
+import androidx.work.PeriodicWorkRequest;
+import androidx.work.WorkManager;
 
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit; // 用于时间转换
+import java.util.concurrent.ExecutorService; // 引入 ExecutorService
+import java.util.concurrent.Executors;     // 引入 Executors
+import java.util.concurrent.TimeUnit;
 
+// 主要的服务类，负责监听短信、来电，管理 Wi-Fi 和触发邮件发送
 public class MonitorService extends Service {
+    // --- 保留原始常量和 TAG ---
     private static final String TAG = "MonitorService";
     public static final String ACTION_START_MONITORING = "com.example.smscallmonitor.action.START_MONITORING";
-    public static final String ACTION_PROCESS_SMS = "PROCESS_SMS";
 
-    private static final long WIFI_OFF_DELAY_MS = TimeUnit.MINUTES.toMillis(5); // 5分钟
-    private static final int WAIT_WIFI_TIME = 35 * 1000;
-    private static final long MISSED_CALL_DEBOUNCE_MS = 10000;
-
-    // AlarmManager 相关
+    // --- 保留 AlarmManager 相关变量 ---
     private AlarmManager alarmManager;
     private PendingIntent wifiOffPendingIntent;
-    public static final int WIFI_OFF_ALARM_REQUEST_CODE = 99;
-    public static final String WIFI_OFF_ACTION = "com.example.smscallmonitor.action.TURN_WIFI_OFF"; // Action for PendingIntent
 
-    // Listener Management 和 CallSession
+    // --- 保留 Listener 和 CallSession 相关变量 ---
     private SubscriptionManager subscriptionManager;
     private Map<Integer, SimPhoneStateListener> phoneStateListeners = new HashMap<>();
     private Map<Integer, TelephonyManager> telephonyManagers = new HashMap<>();
     private final Map<Integer, CallSession> activeCalls = new ConcurrentHashMap<>();
     private final Map<String, Long> processedMissedCalls = new ConcurrentHashMap<>();
-    private static class CallSession {
-        String incomingNumber; boolean isRinging = false; boolean isOffhook = false; long ringStartTime = 0;
-    }
-    // Handler for subscription changes posting (can use default Handler if preferred)
-    private Handler handler = new Handler(Looper.getMainLooper());
+    private static class CallSession { String incomingNumber; boolean isRinging = false; boolean isOffhook = false; long ringStartTime = 0; }
+    // 移除主线程 Handler
+
+    // --- 修改: 需要 WifiManager 和 ConnectivityManager 用于立即发送尝试 ---
+    private PendingEventDao pendingEventDao;      // 数据库访问对象
+    private ExecutorService databaseExecutor;     // 后台数据库操作线程池
+    private WifiManager wifiManager;              // Wi-Fi 管理器实例
+    private ConnectivityManager connectivityManager; // 网络连接管理器实例
+    // --- 修改结束 ---
 
 
     @SuppressLint("ForegroundServiceType")
     @Override
     public void onCreate() {
         super.onCreate();
-        Log.d(TAG, ">>> MonitorService onCreate (Aggressive Wifi Mode)");
+        // 更新日志，指明当前使用的是混合发送逻辑
+        Log.d(TAG, ">>> MonitorService onCreate (Immediate Send Attempt + Periodic Retry - Final)"); // 更新日志
         subscriptionManager = (SubscriptionManager) getApplicationContext().getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
 
-        // 初始化 AlarmManager 和 PendingIntent
+        // --- 初始化 AlarmManager (保持不变) ---
         alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
         Intent intent = new Intent(this, WifiOffReceiver.class);
-        // intent.setAction(WIFI_OFF_ACTION); // Action is optional here
-        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            flags |= PendingIntent.FLAG_IMMUTABLE;
-        }
-        wifiOffPendingIntent = PendingIntent.getBroadcast(this, WIFI_OFF_ALARM_REQUEST_CODE, intent, flags);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+        wifiOffPendingIntent = PendingIntent.getBroadcast(this, IConstants.WIFI_OFF_ALARM_REQUEST_CODE, intent, flags);
         Log.d(TAG, ">>> AlarmManager and PendingIntent initialized.");
 
-        // 创建 Notification Channel
+        // --- 修改: 初始化数据库、线程池、网络管理器和安排 Worker ---
+        Log.d(TAG, ">>> Initializing Database, Executor, Network Managers, and Scheduling Worker...");
+        pendingEventDao = AppDatabase.getDatabase(this).pendingEventDao();
+        databaseExecutor = Executors.newSingleThreadExecutor();
+        // *** 需要初始化 WifiManager 和 ConnectivityManager ***
+        wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        // *** 初始化结束 ***
+        schedulePeriodicConsolidatedSendWork(); // 只安排周期性 Worker
+        Log.d(TAG, ">>> Database, Executor, Network Managers, and Worker Scheduling initialized.");
+        // --- 修改结束 ---
+
+        // --- 移除 Debounce Runnable 的初始化 ---
+
+        // --- 创建通知渠道和前台服务通知 (保持不变) ---
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel("channel", "监控服务", NotificationManager.IMPORTANCE_LOW);
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) manager.createNotificationChannel(channel);
         }
-
-        // 创建 Notification
         Notification notification = new NotificationCompat.Builder(this, "channel")
                 .setContentTitle("短信来电监控中").setSmallIcon(R.mipmap.ic_launcher).build();
         startForeground(1, notification);
 
-        // 注册 OnSubscriptionsChangedListener
+        // --- 注册 SIM 卡变化监听器 (修改: 直接调用) ---
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
             if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
-                if (subscriptionManager != null) { Log.d(TAG, ">>> Adding OnSubscriptionsChangedListener"); subscriptionManager.addOnSubscriptionsChangedListener(subscriptionsChangedListener); }
-                else { Log.e(TAG, ">>> SubscriptionManager is null in onCreate..."); }
-            } else { Log.w(TAG, ">>> READ_PHONE_STATE permission not granted in onCreate..."); }
+                if (subscriptionManager != null) {
+                    Log.d(TAG, ">>> Adding OnSubscriptionsChangedListener");
+                    subscriptionManager.addOnSubscriptionsChangedListener(subscriptionsChangedListener);
+                } else {
+                    Log.e(TAG, ">>> SubscriptionManager is null in onCreate...");
+                }
+            } else {
+                Log.w(TAG, ">>> READ_PHONE_STATE permission not granted in onCreate...");
+            }
         }
         Log.d(TAG, ">>> MonitorService onCreate completed.");
     }
@@ -102,114 +123,42 @@ public class MonitorService extends Service {
             if (ACTION_START_MONITORING.equals(action)) {
                 Log.i(TAG,">>> onStartCommand: Handling ACTION_START_MONITORING - Calling startMonitoring()...");
                 startMonitoring();
-                // 可选: 服务启动时也设置一个初始的关闭闹钟
                 Log.d(TAG, ">>> Scheduling initial Wi-Fi off alarm on service start.");
-                resetWifiOffSchedule();
-            } else if (ACTION_PROCESS_SMS.equals(action)) {
-                Log.d(TAG,">>> onStartCommand: Handling ACTION_PROCESS_SMS");
-                String sender = intent.getStringExtra("sender"); String content = intent.getStringExtra("content");
-                int subId = intent.getIntExtra("subId", SubscriptionManager.INVALID_SUBSCRIPTION_ID);
-                String simInfo = getSimInfo(this, subId);
-                Log.d(TAG, ">>> Processing SMS on " + simInfo + " from " + sender);
-                sendNotification("短信 (" + simInfo + ")", formatEmailBody(sender, content, TimeUtil.getFormattedTimeFromDate(new Date()), subId, "sms", simInfo));
+                EventSendHelper.resetWifiOffSchedule(alarmManager, wifiOffPendingIntent);
+            } else if (Telephony.Sms.Intents.SMS_RECEIVED_ACTION.equals(action)) {
+                Log.d(TAG,">>> onStartCommand: Handling SMS_RECEIVED_ACTION (from SmsReceiver)");
+                handleSmsReceivedIntent(intent); // 处理短信事件
             } else {
                 Log.w(TAG, ">>> onStartCommand received unhandled action: " + action);
             }
         } else {
             Log.d(TAG, ">>> Service restarted with null intent (flags=" + flags + ", startId=" + startId + ")");
-            // 当服务被系统重启时，可以考虑也重置一次闹钟
-            // resetWifiOffSchedule();
         }
         return START_STICKY;
     }
 
-    private String formatEmailBody(String sender, String content, String time, int subId, String actionType, String simInfo) {
-//        String emailFormat = "<table border=\"1\" width=\"100%\"><tr><th width=\"200\">Time</th><th width=\"200\">From</th><th>Content</th></tr><tr><td align=\"center\">{time}</td><td>{sender}</td><td>{content}</td></tr></table>";
-//        String emailFormat = "<table border=\"1\">\n" +
-//                "  <colgroup>\n" +
-//                "    <col style=\"background-color: #ddfffc\"/>\n" +
-//                "    <col style=\"background-color: #e9ffdd\"/>\n" +
-//                "    <col span=\"1\" />\n" +
-//                "  </colgroup>\n" +
-//                "  <tr>\n" +
-//                "    <td style=\"padding: 8px 6px\">Time</td>\n" +
-//                "    <td style=\"padding: 8px 6px\">{time}</td>\n" +
-//                "  </tr>\n" +
-//                "  <tr>\n" +
-//                "    <td style=\"padding: 8px 6px\">From</td>\n" +
-//                "    <td style=\"padding: 8px 6px\">{sender}</td>\n" +
-//                "  </tr>\n" +
-//                "  <tr>\n" +
-//                "    <td style=\"padding: 8px 6px\">Content</td>\n" +
-//                "    <td style=\"padding: 8px 6px\">{content}</td>\n" +
-//                "  </tr>\n" +
-//                "</table>";
-        String emailFormatPre ="<table border=\"1\">\n" +
-                "  <colgroup>\n" +
-                "    <col style=\"background-color: #ddfffc\"/>\n" +
-                "    <col style=\"background-color: #e9ffdd\"/>\n" +
-                "    <col span=\"2\" />\n" +
-                "  </colgroup>\n" +
-                "  <tr>\n" +
-                "    <td style=\"padding: 8px 6px\">Time</td>\n" +
-                "    <td style=\"padding: 8px 6px\">{time}</td>\n" +
-                "  </tr>\n" +
-                "  <tr>\n" +
-                "    <td style=\"padding: 8px 6px\">Type</td>\n" +
-                "    <td style=\"padding: 8px 6px\"><span style=\"color: {actionTypeColor}\">{actionTypeName}</span></td>\n" +
-                "  </tr>\n" +
-                "  <tr>\n" +
-                "    <td style=\"padding: 8px 6px\">From</td>\n" +
-                "    <td style=\"padding: 8px 6px\">{sender}</td>\n" +
-                "  </tr>" +
-                "  <tr>\n" +
-                "    <td style=\"padding: 8px 6px\">To</td>\n" +
-                "    <td style=\"padding: 8px 6px;background-color: {simNumColor}\">sim{subId}: {simInfo}</td>\n" +
-                "  </tr>";
-        String emailFormatContentRow ="<tr>\n" +
-                "    <td style=\"padding: 8px 6px\">Content</td>\n" +
-                "    <td colspan=\"2\" style=\"padding: 8px 6px\">{content}</td>\n" +
-                "  </tr>";
-        String emailFormatSuffix ="</table>";
+    // --- 处理来自 SmsReceiver 的 Intent 的方法 (修改: 调用新的处理逻辑) ---
+    private void handleSmsReceivedIntent(Intent intent) {
+        String sender = intent.getStringExtra("sender");
+        String content = intent.getStringExtra("content");
+        int subId = intent.getIntExtra("subId", SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+        long timestamp = intent.getLongExtra("timestamp", System.currentTimeMillis());
 
-        String actionTypeNameSms = "收到短信";
-        String actionTypeColorSms = "#00a000";
-        String actionTypeNameCall = "未接来电";
-        String actionTypeColorCall = "#ff0000";
-        String simNumColor1 = "#cdbaff";
-        String simNumColor2 = "#ffbaba";
-
-        String actionTypeName = actionTypeNameSms;
-        String actionTypeColor = actionTypeColorSms;
-        String simNumColor = "#000000";
-
-        if("call".equalsIgnoreCase(actionType)) {
-            emailFormatContentRow ="";
-            actionTypeName = actionTypeNameCall;
-            actionTypeColor = actionTypeColorCall;
+        if (sender != null && content != null) {
+            String simInfo = getSimInfo(this, subId);
+            Log.d(TAG, ">>> Processing SMS event on " + simInfo + " from " + sender);
+            PendingEvent newSmsEvent = new PendingEvent("SMS", sender, content, timestamp, simInfo, subId);
+            // 调用新的处理方法，尝试立即发送，失败则保存
+            handleNewEvent(newSmsEvent);
+        } else {
+            Log.w(TAG, ">>> Received SMS intent with null sender or content. Cannot process.");
         }
-        if(1 == subId % 2) {
-            simNumColor = simNumColor1;
-        } else if(0 == subId % 2) {
-            simNumColor = simNumColor2;
-        }
-
-        String emailFormat = emailFormatPre + emailFormatContentRow + emailFormatSuffix;
-        emailFormat = emailFormat.replaceAll("\\{time\\}", time);
-        emailFormat = emailFormat.replaceAll("\\{sender\\}", sender);
-        emailFormat = emailFormat.replaceAll("\\{content\\}", content);
-        emailFormat = emailFormat.replaceAll("\\{actionTypeName\\}", actionTypeName);
-        emailFormat = emailFormat.replaceAll("\\{actionTypeColor\\}", actionTypeColor);
-        emailFormat = emailFormat.replaceAll("\\{simNumColor\\}", simNumColor);
-        emailFormat = emailFormat.replaceAll("\\{subId\\}", String.valueOf(subId));
-        emailFormat = emailFormat.replaceAll("\\{simInfo\\}", simInfo);
-        return emailFormat;
     }
 
-    // --- startMonitoring ---
+    // --- startMonitoring 方法保持不变 ---
     private void startMonitoring() {
         Log.i(TAG, ">>> startMonitoring called.");
-        stopMonitoring(); // 先停止旧的监听
+        stopMonitoring();
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
             Log.e(TAG, ">>> READ_PHONE_STATE permission not granted in startMonitoring. Cannot monitor calls.");
             return;
@@ -224,18 +173,15 @@ public class MonitorService extends Service {
             if (activeSubscriptions != null && !activeSubscriptions.isEmpty()) {
                 Log.i(TAG, ">>> Found " + activeSubscriptions.size() + " active subscriptions.");
                 for (SubscriptionInfo subInfo : activeSubscriptions) {
-                    Log.d(TAG, ">>>   - SubId: " + subInfo.getSubscriptionId() + ", Slot: " + subInfo.getSimSlotIndex() + ", Name: " + subInfo.getDisplayName());
                     int subId = subInfo.getSubscriptionId();
                     CharSequence displayNameCs = subInfo.getDisplayName();
                     String displayName = (displayNameCs != null ? displayNameCs.toString() : "SIM Slot " + subInfo.getSimSlotIndex());
-                    Log.d(TAG, ">>> Setting up listener for SubId: " + subId + "...");
-
+                    Log.d(TAG, ">>> Setting up listener for SubId: " + subId + " (Name: " + displayName + ")");
                     TelephonyManager tm = null;
                     try { tm = ((TelephonyManager) getApplicationContext().getSystemService(Context.TELEPHONY_SERVICE)).createForSubscriptionId(subId); }
                     catch (Exception e) { Log.e(TAG, ">>> Exception creating TelephonyManager for subId " + subId + ": " + e.getMessage()); }
-
                     if (tm != null) {
-                        SimPhoneStateListener listener = new SimPhoneStateListener(subId, displayName);
+                        SimPhoneStateListener listener = new SimPhoneStateListener(subId, displayName); // **创建 Listener 实例**
                         try {
                             tm.listen(listener, PhoneStateListener.LISTEN_CALL_STATE);
                             phoneStateListeners.put(subId, listener);
@@ -248,7 +194,7 @@ public class MonitorService extends Service {
         } else { Log.w(TAG, ">>> SubscriptionManager not available or permission denied in startMonitoring."); }
     }
 
-    // --- stopMonitoring ---
+    // --- stopMonitoring 方法保持不变 ---
     private void stopMonitoring() {
         Log.d(TAG, ">>> Stopping phone state monitoring...");
         if (!telephonyManagers.isEmpty()) {
@@ -261,180 +207,289 @@ public class MonitorService extends Service {
                     catch (Exception e) { Log.e(TAG,">>> Exception unregistering listener for subId " + subId + ": " + e.getMessage());}
                 }
             }
-            telephonyManagers.clear(); phoneStateListeners.clear(); activeCalls.clear(); processedMissedCalls.clear();
+            telephonyManagers.clear();
+            phoneStateListeners.clear();
+            activeCalls.clear();
+            processedMissedCalls.clear();
+            Log.d(TAG, ">>> Phone state monitoring stopped and resources cleared.");
+        } else {
+            Log.d(TAG, ">>> No active phone state listeners to stop.");
         }
     }
 
-    // --- subscriptionsChangedListener ---
+    // --- subscriptionsChangedListener (修改: 移除 Handler.post) ---
     private final SubscriptionManager.OnSubscriptionsChangedListener subscriptionsChangedListener =
             new SubscriptionManager.OnSubscriptionsChangedListener() {
                 @Override public void onSubscriptionsChanged() {
-                    handler.post(() -> { Log.i(TAG, ">>> Subscription change detected! Restarting monitoring."); startMonitoring(); });
+                    Log.i(TAG, ">>> Subscription change detected! Restarting phone state monitoring.");
+                    startMonitoring();
                 }
             };
 
-    // --- handleMissedCall ---
+    // --- handleMissedCall 方法修改 ---
     public void handleMissedCall(String incomingNumber, int subId, String simDisplayName) {
         Log.i(TAG, ">>> handleMissedCall triggered for SubId: " + subId + ", Number: " + incomingNumber + ", Name: " + simDisplayName);
-        String callKey = subId + "_" + incomingNumber; long now = System.currentTimeMillis();
+        String callKey = subId + "_" + incomingNumber;
+        long now = System.currentTimeMillis();
         Long lastProcessedTime = processedMissedCalls.getOrDefault(callKey, 0L);
-        if (now - lastProcessedTime > MISSED_CALL_DEBOUNCE_MS) {
+
+        if (now - lastProcessedTime > IConstants.MISSED_CALL_DEBOUNCE_MS) {
             processedMissedCalls.put(callKey, now);
             Log.i(TAG, ">>> Confirmed Missed Call (passed debounce) on " + simDisplayName + " from: " + incomingNumber);
-            sendNotification("未接来电 (" + simDisplayName + ")", formatEmailBody(incomingNumber, "未接来电", TimeUtil.getFormattedTimeFromDate(new Date()), subId, "call", simDisplayName));
-        } else { Log.d(TAG, ">>> Debounced duplicate missed call event for key: " + callKey); }
+
+            // --- 修改: 调用新的处理逻辑 ---
+            String simInfo = getSimInfo(this, subId);
+            PendingEvent newCallEvent = new PendingEvent("CALL", incomingNumber, null, now, simInfo, subId);
+            handleNewEvent(newCallEvent); // 调用新的处理方法
+            Log.d(TAG, ">>> Missed call event processed for " + incomingNumber); // 更新日志
+            // --- 修改结束 ---
+
+        } else {
+            Log.d(TAG, ">>> Debounced duplicate missed call event for key: " + callKey);
+        }
     }
 
-    // --- SimPhoneStateListener ---
+    // --- SimPhoneStateListener 内部类 (确保定义和调用正确) ---
     private class SimPhoneStateListener extends PhoneStateListener {
-        private final int subId; private final String simDisplayName;
+        private final int subId; // 监听器关联的 Subscription ID
+        private final String simDisplayName; // **用于日志和传递的 SIM 显示名称**
+
+        // 构造函数
         SimPhoneStateListener(int subId, String displayName){
-            super(); this.subId = subId; this.simDisplayName = displayName;
+            super();
+            this.subId = subId;
+            this.simDisplayName = displayName; // **初始化成员变量**
             activeCalls.putIfAbsent(subId, new CallSession());
-            Log.d(TAG, ">>> SimPhoneStateListener created for SubId: " + subId + " Name: " + simDisplayName);
+            Log.d(TAG, ">>> SimPhoneStateListener created for SubId: " + this.subId + " Name: " + this.simDisplayName);
         }
-        @Override public void onCallStateChanged(int state, String number) {
-            Log.i(TAG, ">>> SimPhoneStateListener.onCallStateChanged triggered! SubId: " + subId + " ("+ simDisplayName +"), State: " + stateToString(state) + ", Number: " + number);
+
+        // 当通话状态改变时被系统调用
+        @Override
+        public void onCallStateChanged(int state, String number) {
+            // **使用 this. 来引用成员变量，更清晰**
+            Log.i(TAG, ">>> SimPhoneStateListener.onCallStateChanged triggered! SubId: " + this.subId + " ("+ this.simDisplayName +"), State: " + stateToString(state) + ", Number: " + number);
             String incomingNumber = number;
-            Log.d(TAG, ">>> Listener for SubId: " + subId + " - State changed: " + stateToString(state) + ", Incoming Number: " + incomingNumber);
-            CallSession session = activeCalls.get(subId);
-            if (session == null) { session = new CallSession(); activeCalls.put(subId, session); Log.w(TAG, ">>> CallSession was null for subId " + subId + ", created new.");}
-            if (incomingNumber != null && !incomingNumber.isEmpty() && !incomingNumber.equals(session.incomingNumber)) { session.incomingNumber = incomingNumber; Log.d(TAG, ">>> Updating number for subId " + subId + " to: " + incomingNumber);}
+            Log.d(TAG, ">>> Listener for SubId: " + this.subId + " - State changed: " + stateToString(state) + ", Incoming Number: " + incomingNumber);
+            CallSession session = activeCalls.get(this.subId);
+            if (session == null) {
+                session = new CallSession();
+                activeCalls.put(this.subId, session);
+                Log.w(TAG, ">>> CallSession was null for subId " + this.subId + ", created new.");
+            }
+            if (incomingNumber != null && !incomingNumber.isEmpty() && !incomingNumber.equals(session.incomingNumber)) {
+                session.incomingNumber = incomingNumber;
+                Log.d(TAG, ">>> Updating number for subId " + this.subId + " to: " + incomingNumber);
+            }
+
             switch (state) {
-                case TelephonyManager.CALL_STATE_RINGING: session.isRinging = true; session.isOffhook = false; session.ringStartTime = System.currentTimeMillis(); Log.d(TAG, ">>> RINGING on " + simDisplayName + ", Number known: " + session.incomingNumber); break;
-                case TelephonyManager.CALL_STATE_OFFHOOK: if (session.isRinging || session.ringStartTime > 0) { session.isOffhook = true; Log.d(TAG, ">>> OFFHOOK on " + simDisplayName + " - Call answered.");} else { Log.d(TAG, ">>> OFFHOOK on " + simDisplayName + " - Not ringing on this SIM."); } session.isRinging = false; session.ringStartTime = 0; break;
-                case TelephonyManager.CALL_STATE_IDLE: Log.d(TAG, ">>> IDLE on " + simDisplayName + " - Check Missed Call: RingingStarted=" + (session.ringStartTime > 0) + ", Offhook=" + session.isOffhook + ", Number=" + session.incomingNumber); if (session.ringStartTime > 0 && !session.isOffhook && session.incomingNumber != null && !session.incomingNumber.isEmpty()) { Log.i(TAG, ">>> Missed call condition met for SubId: " + subId + ". Calling handleMissedCall..."); handleMissedCall(session.incomingNumber, subId, simDisplayName); } else { Log.d(TAG, ">>> IDLE on " + simDisplayName + " - Not a missed call."); } activeCalls.put(subId, new CallSession()); Log.d(TAG,">>> Reset call session for subId: " + subId); break;
+                case TelephonyManager.CALL_STATE_RINGING:
+                    session.isRinging = true;
+                    session.isOffhook = false;
+                    session.ringStartTime = System.currentTimeMillis();
+                    Log.d(TAG, ">>> RINGING on " + this.simDisplayName + ", Number known: " + session.incomingNumber);
+                    break;
+                case TelephonyManager.CALL_STATE_OFFHOOK:
+                    if (session.isRinging || session.ringStartTime > 0) {
+                        session.isOffhook = true;
+                        Log.d(TAG, ">>> OFFHOOK on " + this.simDisplayName + " - Call answered.");
+                    } else {
+                        Log.d(TAG, ">>> OFFHOOK on " + this.simDisplayName + " - Not ringing on this SIM (Outgoing call or other state).");
+                    }
+                    session.isRinging = false;
+                    session.ringStartTime = 0;
+                    break;
+                case TelephonyManager.CALL_STATE_IDLE:
+                    Log.d(TAG, ">>> IDLE on " + this.simDisplayName + " - Check Missed Call: RingingStarted=" + (session.ringStartTime > 0) + ", Offhook=" + session.isOffhook + ", Number=" + session.incomingNumber);
+                    if (session.ringStartTime > 0 && !session.isOffhook && session.incomingNumber != null && !session.incomingNumber.isEmpty()) {
+                        Log.i(TAG, ">>> Missed call condition met for SubId: " + this.subId + ". Calling handleMissedCall...");
+                        // **确保这里传递的是 this.simDisplayName**
+                        handleMissedCall(session.incomingNumber, this.subId, this.simDisplayName); // *** 调用外部类的 handleMissedCall ***
+                    } else {
+                        Log.d(TAG, ">>> IDLE on " + this.simDisplayName + " - Not a missed call.");
+                    }
+                    activeCalls.put(this.subId, new CallSession());
+                    Log.d(TAG,">>> Reset call session for subId: " + this.subId);
+                    break;
             }
         }
+
         private String stateToString(int state) {
-            switch (state) { case TelephonyManager.CALL_STATE_IDLE: return "IDLE"; case TelephonyManager.CALL_STATE_RINGING: return "RINGING"; case TelephonyManager.CALL_STATE_OFFHOOK: return "OFFHOOK"; default: return "UNKNOWN_" + state; }
-        }
-    }
-
-    // --- sendNotification (Aggressive Mode) ---
-    private void sendNotification(String subject, String body) {
-        Log.i(TAG, ">>> sendNotification called (Aggressive Wifi Mode). Subject: " + subject);
-
-        // 每次事件发生，都重置Wi-Fi关闭计划
-        Log.d(TAG, ">>> Resetting Wi-Fi off schedule due to new event.");
-        resetWifiOffSchedule(); // 无论Wi-Fi是否打开，都重置计时器
-
-        new Thread(() -> {
-            try {
-                Log.i(TAG, ">>> Background thread in sendNotification started.");
-                WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-
-                // 尝试打开Wi-Fi以发送邮件
-                if (wifiManager != null && !wifiManager.isWifiEnabled()) {
-                    Log.d(TAG, ">>> Wi-Fi is disabled. Checking CHANGE_WIFI_STATE permission...");
-                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                        if (checkSelfPermission(Manifest.permission.CHANGE_WIFI_STATE) == PackageManager.PERMISSION_GRANTED) {
-                            Log.d(TAG, ">>> CHANGE_WIFI_STATE permission is GRANTED.");
-                            try {
-                                Log.d(TAG, ">>> Attempting to call wifiManager.setWifiEnabled(true)...");
-                                wifiManager.setWifiEnabled(true);
-                                Log.d(TAG, ">>> Call to wifiManager.setWifiEnabled(true) completed.");
-                            } catch (Exception e) { Log.e(TAG,"Error enabling wifi: "+e.getMessage());}
-                        } else { Log.w(TAG, ">>> CHANGE_WIFI_STATE permission is DENIED."); }
-                    } else { Log.w(TAG, ">>> Cannot enable Wi-Fi on Android 10+."); }
-                } else if (wifiManager != null) { Log.d(TAG, ">>> Wi-Fi is already enabled."); }
-                else { Log.e(TAG, ">>> WifiManager is null."); }
-
-                // 发送邮件
-                Log.d(TAG, ">>> Waiting for network connection...");
-                if (waitUntilConnected()) {
-                    Log.i(TAG, ">>> Network connected. Sending email using EmailSender.send()...");
-                    try { EmailSender.send(subject, body); }
-                    catch (Exception e) { Log.e(TAG, ">>> Exception caught calling EmailSender.send: " + e.getMessage(), e); System.err.println("❌ 邮件发送时发生意外错误：" + e.getMessage());}
-                } else { Log.e(TAG, ">>> Network connection timeout. Email not sent."); System.out.println("❌ 超时：网络未连接，无法发送邮件"); }
-            } catch (Throwable t) {
-                Log.e(TAG, ">>> !!! UNCAUGHT ERROR IN sendNotification THREAD !!! <<<", t);
+            switch (state) {
+                case TelephonyManager.CALL_STATE_IDLE: return "IDLE";
+                case TelephonyManager.CALL_STATE_RINGING: return "RINGING";
+                case TelephonyManager.CALL_STATE_OFFHOOK: return "OFFHOOK";
+                default: return "UNKNOWN_" + state;
             }
-        }).start();
-    }
-
-    // --- resetWifiOffSchedule ---
-    private void resetWifiOffSchedule() {
-        Log.d(TAG, ">>> Resetting Wi-Fi turn-off schedule (Cancelling and rescheduling alarm).");
-        cancelWifiOffAlarm(); // 先取消旧的
-        scheduleWifiOffAlarm(); // 再设置新的
-    }
-
-    // --- scheduleWifiOffAlarm ---
-    private void scheduleWifiOffAlarm() {
-        if (alarmManager != null && wifiOffPendingIntent != null) {
-            long triggerAtMillis = System.currentTimeMillis() + WIFI_OFF_DELAY_MS;
-            try {
-                // 使用 set 以允许系统优化，对于非精确关闭场景足够
-                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, wifiOffPendingIntent);
-                Log.i(TAG, ">>> Scheduled Wi-Fi off alarm for " + WIFI_OFF_DELAY_MS + "ms from now.");
-            } catch (SecurityException se) { Log.e(TAG, ">>> SecurityException scheduling Wi-Fi off alarm: " + se.getMessage());}
-            catch (Exception e) { Log.e(TAG, ">>> Error scheduling Wi-Fi off alarm: " + e.getMessage());}
-        } else { Log.e(TAG, ">>> Cannot schedule Wi-Fi off alarm: AlarmManager or PendingIntent is null."); }
-    }
-
-    // --- cancelWifiOffAlarm ---
-    private void cancelWifiOffAlarm() {
-        if (alarmManager != null && wifiOffPendingIntent != null) {
-            Log.d(TAG, ">>> Cancelling scheduled Wi-Fi off alarm.");
-            alarmManager.cancel(wifiOffPendingIntent);
-        } else { Log.w(TAG, ">>> Cannot cancel Wi-Fi off alarm: AlarmManager or PendingIntent is null."); }
-    }
-
-    // --- waitUntilConnected ---
-    private boolean waitUntilConnected() {
-        ConnectivityManager cm = (ConnectivityManager) getApplicationContext().getSystemService(Context.CONNECTIVITY_SERVICE);
-        if (cm == null) { Log.e(TAG, ">>> ConnectivityManager is null."); return false; }
-        long startTime = System.currentTimeMillis();
-        int checkCount = 0;
-        while (System.currentTimeMillis() - startTime < WAIT_WIFI_TIME) {
-            checkCount++; boolean connected = false;
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    Network an = cm.getActiveNetwork();
-                    if (an != null) { NetworkCapabilities caps = cm.getNetworkCapabilities(an); boolean v = caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED); Log.d(TAG, ">>> Check #" + checkCount + ": ActiveNetwork=" + an + ", Validated=" + v); if (v) connected = true; }
-                    else { Log.d(TAG, ">>> Check #" + checkCount + ": ActiveNetwork is null"); }
-                } else { @SuppressLint("MissingPermission") NetworkInfo ni = cm.getActiveNetworkInfo(); boolean lc = ni != null && ni.isConnected(); Log.d(TAG, ">>> Check #" + checkCount + ": Legacy Connected=" + lc + (ni != null ? ", Type=" + ni.getTypeName() : "")); if (lc) connected = true; }
-            } catch (Exception e) { Log.e(TAG, ">>> Error checking network: " + e.getMessage()); }
-            if(connected) { Log.d(TAG, ">>> waitUntilConnected returning true."); return true; }
-            try { Thread.sleep(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
         }
-        Log.w(TAG, ">>> Wait for connection timed out."); return false;
+    } // SimPhoneStateListener 内部类结束
+
+
+    // --- 修改: handleNewEvent 方法，实现立即发送失败后暂存逻辑 ---
+    /**
+     * 处理新的事件（SMS 或 CALL）。
+     * 尝试立即发送，如果失败则保存到数据库。
+     * @param event 新的事件对象
+     */
+    private void handleNewEvent(PendingEvent event) {
+        Log.d(TAG, ">>> Handling new event: Type=" + event.eventType + ", From=" + event.senderNumber);
+        // 1. 重置 Wi-Fi 关闭计时器 (确保有时间尝试发送)
+        EventSendHelper.resetWifiOffSchedule(alarmManager, wifiOffPendingIntent);
+        Log.d(TAG, ">>> Wi-Fi off schedule reset for new event.");
+
+        // 2. 使用后台线程尝试立即发送
+        databaseExecutor.execute(() -> { // 确保网络和邮件操作不在主线程
+            EventSendHelper.SendStatus sendStatus = EventSendHelper.SendStatus.SEND_FAILED_OTHER; // 默认状态为失败
+            try {
+                // 调用 EventSendHelper 尝试立即发送单个事件，并获取返回状态
+                Log.d(TAG, ">>> Attempting immediate send via EventSendHelper..."); // 添加日志
+                sendStatus = EventSendHelper.trySendSingleEventImmediately(
+                        getApplicationContext(),
+                        event,
+                        wifiManager, // 传递 MonitorService 的成员变量
+                        connectivityManager // 传递 MonitorService 的成员变量
+                );
+            } catch (Exception e) {
+                Log.e(TAG, ">>> Exception during immediate send attempt: " + e.getMessage(), e);
+                // 即使发送尝试本身抛出异常，也视为发送失败 (状态保持默认的 SEND_FAILED_OTHER)
+            }
+
+            // 3. 如果立即发送失败 (任何类型的失败)，则保存到数据库
+            if (sendStatus != EventSendHelper.SendStatus.SEND_SUCCESS) {
+                Log.w(TAG, ">>> Immediate send failed (Status: " + sendStatus + ") for event: Type=" + event.eventType + ", From=" + event.senderNumber + ". Saving to database for later retry.");
+                try {
+                    Log.d(TAG, ">>> Inserting failed event into database..."); // 添加日志
+                    pendingEventDao.insert(event); // 将事件插入数据库
+                    Log.i(TAG, ">>> Successfully saved failed event to DB.");
+                } catch (Exception dbException) {
+                    Log.e(TAG, ">>> CRITICAL: Failed to save event to DB after send failure: " + dbException.getMessage(), dbException);
+                    // 这种情况比较严重，事件可能会丢失，需要关注此日志
+                }
+            } else {
+                Log.i(TAG, ">>> Event sent immediately successfully: Type=" + event.eventType + ", From=" + event.senderNumber);
+                // 发送成功，不需要进行数据库插入操作
+                // 发送成功，则尝试把数据库里有的记录也发了
+                EventSendHelper.performConsolidatedSend(getApplicationContext(), pendingEventDao, wifiManager, connectivityManager);
+            }
+        }); // databaseExecutor.execute 结束
     }
+    // --- 修改结束 ---
+
+
+
+    // --- WorkManager 相关方法 (保持不变 - 只安排周期性任务) ---
+    private void schedulePeriodicConsolidatedSendWork() {
+        Log.d(TAG, ">>> Scheduling Periodic Consolidated Send Work...");
+        int scheduledInterval = IConstants.SCHEDULED_WORK_INTERVAL_MINUTE;
+        PeriodicWorkRequest retryWorkRequest =
+                new PeriodicWorkRequest.Builder(ConsolidatedSendWorker.class, scheduledInterval, TimeUnit.MINUTES)
+                        .build();
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+                "ConsolidatedSendWork", // 周期性任务的唯一名称
+                ExistingPeriodicWorkPolicy.KEEP,
+                retryWorkRequest);
+        Log.i(TAG, ">>> Enqueued periodic consolidated send work (every " + scheduledInterval + " minutes).");
+    }
+
+    private void cancelPeriodicConsolidatedSendWork() {
+        try {
+            WorkManager.getInstance(this).cancelUniqueWork("ConsolidatedSendWork");
+            Log.i(TAG, ">>> Cancelled periodic consolidated send work.");
+        } catch (Exception e) {
+            Log.e(TAG, ">>> Error cancelling periodic consolidated send work: " + e.getMessage());
+        }
+    }
+    // --- 修改结束 ---
 
     @Override
-    public IBinder onBind(Intent intent) { return null; }
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
 
-    // --- onDestroy ---
+    // --- onDestroy 方法修改 ---
     @Override
     public void onDestroy() {
         Log.d(TAG, ">>> MonitorService onDestroy");
         stopMonitoring();
+        EventSendHelper.cancelWifiOffAlarm(alarmManager, wifiOffPendingIntent);
 
-        // 取消计划中的闹钟
-        cancelWifiOffAlarm();
+        // --- 移除 SIM 卡变化监听器 (保持不变) ---
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1 && subscriptionManager != null) {
+            try {
+                subscriptionManager.removeOnSubscriptionsChangedListener(subscriptionsChangedListener);
+                Log.d(TAG,">>> Removed subscription listener.");
+            } catch (Exception e) { Log.e(TAG, ">>> Error removing subscription listener: " + e.getMessage()); }
+        }
 
-        // 移除 subscription change listener
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1 && subscriptionManager != null) { try { subscriptionManager.removeOnSubscriptionsChangedListener(subscriptionsChangedListener); Log.d(TAG,">>> Removed subscription listener.");} catch (Exception e) { Log.e(TAG, ">>> Error removing subscription listener: " + e.getMessage()); } }
+        // --- 关闭数据库操作的线程池 (保持不变) ---
+        if (databaseExecutor != null && !databaseExecutor.isShutdown()) {
+            try {
+                databaseExecutor.shutdown();
+                Log.d(TAG, ">>> Database executor shutdown requested.");
+            } catch (Exception e) {
+                Log.e(TAG, ">>> Error shutting down database executor: " + e.getMessage());
+            }
+        }
+
+        // --- 移除 Debounce Handler 的清理 ---
+
+        // --- 取消周期性任务 (保持不变) ---
+        cancelPeriodicConsolidatedSendWork();
+        // --- 移除取消一次性任务的代码 ---
+
 
         stopForeground(true);
         super.onDestroy();
+        Log.d(TAG, ">>> MonitorService onDestroy completed.");
     }
 
-    // --- getSimInfo ---
+    // --- getSimInfo 方法保持不变 ---
     private String getSimInfo(Context context, int subId) {
         if (subId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) return "未知SIM卡";
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) { Log.w(TAG, ">>> getSimInfo: No READ_PHONE_STATE permission."); SimPhoneStateListener l = phoneStateListeners.get(subId); return (l != null) ? l.simDisplayName + " (ID: " + subId + ")" : "SIM ID " + subId; }
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, ">>> getSimInfo: No READ_PHONE_STATE permission.");
+            SimPhoneStateListener l = phoneStateListeners.get(subId);
+            return (l != null) ? l.simDisplayName + " (ID: " + subId + ")" : "SIM ID " + subId;
+        }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                SubscriptionManager sm = this.subscriptionManager; if (sm == null) { sm = (SubscriptionManager) context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE); }
+                SubscriptionManager sm = this.subscriptionManager;
+                if (sm == null) {
+                    sm = (SubscriptionManager) context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
+                }
                 if (sm != null) {
-                    SubscriptionInfo si = null; try { si = sm.getActiveSubscriptionInfo(subId); } catch (SecurityException e) { Log.e(TAG,">>> SecEx getting SubInfo "+subId+": "+e.getMessage());}
-                    if (si != null) { CharSequence cs = si.getDisplayName(); String dn = (cs!=null?cs.toString():"SIM "+si.getSimSlotIndex()); return dn+" (ID: "+subId+")"; }
-                    else { List<SubscriptionInfo> asl = sm.getActiveSubscriptionInfoList(); if (asl != null) for(SubscriptionInfo i : asl) if (i.getSubscriptionId()==subId){ CharSequence cs=i.getDisplayName(); String dn=(cs!=null?cs.toString():"SIM "+i.getSimSlotIndex()); return dn+" (ID: "+subId+")"; } Log.w(TAG, ">>> Could not find active SubInfo for subId: " + subId); }
-                } else { Log.w(TAG, ">>> getSimInfo: SubscriptionManager instance is null."); }
+                    SubscriptionInfo si = null;
+                    try {
+                        si = sm.getActiveSubscriptionInfo(subId);
+                    } catch (SecurityException e) {
+                        Log.e(TAG,">>> SecEx getting SubInfo "+subId+": "+e.getMessage());
+                    }
+                    if (si != null) {
+                        CharSequence cs = si.getDisplayName();
+                        String dn = (cs!=null && cs.length() > 0 ? cs.toString() : "SIM "+(si.getSimSlotIndex()+1));
+                        return dn+" (ID: "+subId+")";
+                    } else {
+                        List<SubscriptionInfo> asl = null;
+                        try { asl = sm.getActiveSubscriptionInfoList(); } catch (SecurityException ignored) {}
+                        if (asl != null) {
+                            for(SubscriptionInfo i : asl) {
+                                if (i.getSubscriptionId() == subId){
+                                    CharSequence cs=i.getDisplayName();
+                                    String dn=(cs!=null && cs.length() > 0 ? cs.toString() : "SIM "+(i.getSimSlotIndex()+1));
+                                    return dn+" (ID: "+subId+")";
+                                }
+                            }
+                        }
+                        Log.w(TAG, ">>> Could not find active SubInfo for subId: " + subId + " using SubscriptionManager.");
+                    }
+                } else {
+                    Log.w(TAG, ">>> getSimInfo: SubscriptionManager instance is null.");
+                }
             }
-        } catch (Exception e) { Log.e(TAG, ">>> General exception in getSimInfo: " + e.getMessage()); }
-        SimPhoneStateListener l = phoneStateListeners.get(subId); return (l != null) ? l.simDisplayName + " (ID: " + subId + ")" : "SIM ID " + subId;
+        } catch (Exception e) {
+            Log.e(TAG, ">>> General exception in getSimInfo: " + e.getMessage());
+        }
+        SimPhoneStateListener l = phoneStateListeners.get(subId);
+        Log.w(TAG, ">>> Falling back to listener display name for subId: " + subId);
+        return (l != null) ? l.simDisplayName + " (ID: " + subId + ")" : "SIM ID " + subId;
     }
-}
+} // MonitorService 类结束
