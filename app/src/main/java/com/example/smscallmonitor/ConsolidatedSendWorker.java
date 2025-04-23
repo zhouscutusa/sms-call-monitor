@@ -74,9 +74,9 @@ public class ConsolidatedSendWorker extends Worker {
             Log.i(TAG, ">>> Consolidated send attempt finished successfully (or no events). Worker returning SUCCESS.");
             return Result.success(); // 返回成功状态
         } else {
-            Log.w(TAG, ">>> Consolidated send attempt failed. Worker returning RETRY.");
-            // 发送失败，不需要关闭 Wi-Fi，下次需要网络重试
-            return Result.retry(); // 告知 WorkManager 需要稍后重试
+            Log.w(TAG, ">>> Consolidated send attempt finished failed. Worker returning SUCCESS to avoid RETRY.");
+            return Result.success();
+//            return Result.retry(); // 告知 WorkManager 需要稍后重试
         }
     }
 }
