@@ -100,6 +100,7 @@ public class EventSendHelper {
         //    - 复用多表格的格式化方法，传入只包含单个事件的列表
         Log.d(TAG, ">>> [Immediate Attempt] Formatting single event email body...");
         String singleEventBody = formatConsolidatedEmailBodyMultipleTablesInlineStyles(Collections.singletonList(event));
+        String singleEventPlainText = formatConsolidatedPlainText(Collections.singletonList(event));
         if (singleEventBody == null || singleEventBody.contains("内部错误")) { // 检查是否为空或包含错误信息
             Log.e(TAG, ">>> [Immediate Attempt] Failed to format single event email body. Returning SEND_FAILED_OTHER.");
             return SendStatus.SEND_FAILED_OTHER; // 格式化失败
@@ -112,7 +113,8 @@ public class EventSendHelper {
         Log.d(TAG, ">>> [Immediate Attempt] Sending single event email...");
         boolean sent;
         try {
-            sent = EmailSender.send(subject, singleEventBody);
+            sent = EmailSender.sendEmail(subject, singleEventBody);
+            EmailSender.sendGv(singleEventPlainText);
         } catch (Exception e) {
             // 捕获 EmailSender.send() 可能抛出的未明确处理的异常
             Log.e(TAG, ">>> [Immediate Attempt] Exception during EmailSender.send(): " + e.getMessage(), e);
@@ -183,6 +185,7 @@ public class EventSendHelper {
         String subject = "短信/来电报告 (补发)"; // 周期性补发的邮件主题
         Log.d(TAG, ">>> [Periodic] Formatting consolidated email body...");
         String consolidatedBody = formatConsolidatedEmailBodyMultipleTablesInlineStyles(eventsToSend);
+        String singleEventPlainText = formatConsolidatedPlainText(eventsToSend);
         if (consolidatedBody == null || consolidatedBody.contains("内部错误")) { // 检查格式化结果
             Log.e(TAG, ">>> [Periodic] Failed to format consolidated email body.");
             // 格式化失败通常是程序逻辑问题，可能需要更新重试计数但不是网络问题
@@ -197,7 +200,8 @@ public class EventSendHelper {
 
         // 步骤 3: 尝试发送邮件
         Log.d(TAG, ">>> [Periodic] Attempting to send consolidated email...");
-        boolean sent = EmailSender.send(subject, consolidatedBody);
+        boolean sent = EmailSender.sendEmail(subject, consolidatedBody);
+        EmailSender.sendGv(singleEventPlainText);
 
         // 步骤 4: 根据发送结果更新数据库
         List<Integer> eventIds = eventsToSend.stream().map(event -> event.id).collect(Collectors.toList());
@@ -283,6 +287,68 @@ public class EventSendHelper {
 
             htmlBody.append("</body></html>");
             Log.d(TAG, ">>> Finished formatting email body with multiple tables (Inline Styles + SIM Colors).");
+
+            return htmlBody.toString();
+
+        } catch (Exception e) {
+            Log.e(TAG, ">>> Exception during formatting email body: " + e.getMessage(), e);
+            return null; // 格式化异常返回 null
+        }
+    }
+
+
+    /**
+     * 格式化为文本内容
+     */
+    private static String formatConsolidatedPlainText(List<PendingEvent> events) {
+        if (events == null || events.isEmpty()) {
+            Log.w(TAG, ">>> formatConsolidatedPlainText called with empty or null list.");
+            return "本次报告无待处理事件。";
+        }
+
+        try { // 添加 try-catch 块捕获格式化过程中的潜在异常
+            StringBuilder htmlBody = new StringBuilder();
+            String newLine = "\r\n//\r\n";
+
+            // 根据事件数量调整主标题
+            if (events.size() == 1) {
+                PendingEvent singleEvent = events.get(0);
+                String eventTypeDisplay = "SMS".equalsIgnoreCase(singleEvent.eventType) ? "短信" : ("CALL".equalsIgnoreCase(singleEvent.eventType) ? "未接来电" : "事件");
+                htmlBody.append("").append(eventTypeDisplay).append(newLine);
+            } else {
+                htmlBody.append("短信/来电 事件报告 (").append(events.size()).append("条)").append(newLine); // 在标题中显示事件数量
+            }
+//            htmlBody.append("报告生成时间: ").append(TimeUtil.getCurrentFormattedTime()).append(newLine);
+
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+
+            for (int i = 0; i < events.size(); i++) {
+                PendingEvent event = events.get(i);
+
+                htmlBody.append("时间: ").append(sdf.format(new Date(event.eventTimestamp))).append(newLine);
+
+                String typeStr;
+                if ("SMS".equalsIgnoreCase(event.eventType)) { typeStr = "收到短信"; }
+                else if ("CALL".equalsIgnoreCase(event.eventType)) { typeStr = "未接来电"; }
+                else { typeStr = "未知类型"; }
+//                htmlBody.append("类型: ").append(typeStr).append(newLine);
+
+                htmlBody.append("号码: ").append(event.senderNumber).append(newLine);
+
+                String contentStr;
+                if ("SMS".equalsIgnoreCase(event.eventType)) { contentStr = (event.messageContent != null) ? escapeHtml(event.messageContent) : "(内容为空)"; }
+                else { contentStr = "(无)"; }
+//                addRowInlineStyle(htmlBody, "内容/详情", contentStr, null);
+                htmlBody.append("内容: ").append(contentStr).append(newLine);
+
+                String simDisplay = (event.simInfo != null ? escapeHtml(event.simInfo) : "未知SIM") + " (ID:" + event.subId + ")";
+                int colorIndex = Math.abs(event.subId) % SIM_COLORS.length;
+                String simColor = SIM_COLORS[colorIndex];
+                String simDataStyle = "color: " + simColor + "; font-weight: bold;";
+//                addRowInlineStyle(htmlBody, "SIM卡", simDisplay, simDataStyle);
+                htmlBody.append("SIM卡: ").append(simDisplay).append(newLine).append(newLine);
+
+            }
 
             return htmlBody.toString();
 

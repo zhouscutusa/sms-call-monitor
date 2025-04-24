@@ -13,6 +13,8 @@ public class EmailSender {
 
     // 硬编码的收件人邮箱地址，实际应用中应考虑使用配置或用户输入
     private static final String RECIPIENT_EMAILS = "接收邮箱1@gmail.com,接收邮箱2@gmail.com,接收邮箱3@gmail.com";
+    // 硬编码的收件人Google Voice号码对应的邮箱地址，实际应用中应考虑使用配置或用户输入
+    private static final String RECIPIENT_GVS = "Google Voice号码对应的邮箱@txt.voice.google.com";
     // 硬编码的发件人凭证，极不安全，仅用于示例！实际应用必须安全存储或让用户输入
     private static final String SENDER_USER = "发送邮件@gmail.com"; // 发件人 Gmail 邮箱
     private static final String SENDER_PASSWORD = "应用密码"; // 发件人 Gmail 应用专用密码
@@ -23,7 +25,27 @@ public class EmailSender {
      * @param body 邮件正文 (HTML 格式)
      * @return true 如果邮件发送尝试成功 (不保证送达)，false 如果在发送过程中发生错误
      */
-    public static boolean send(String subject, String body) {
+    public static boolean sendEmail(String subject, String body) {
+        return send(subject, body, RECIPIENT_EMAILS);
+    }
+    /**
+     * 发送邮件到GoogleVoice的方法
+     * @param body 邮件正文（纯文本）
+     * @return true 如果邮件发送尝试成功 (不保证送达)，false 如果在发送过程中发生错误
+     */
+    public static boolean sendGv(String body) {
+        String subject = "Re: New text message from (415) 935-3397";
+        return send(subject, body, RECIPIENT_GVS);
+    }
+
+    /**
+     * 发送邮件的方法
+     * @param subject 邮件主题
+     * @param body 邮件正文
+     * @param recipient 收件人
+     * @return true 如果邮件发送尝试成功 (不保证送达)，false 如果在发送过程中发生错误
+     */
+    public static boolean send(String subject, String body, String recipient) {
         // SMTP 服务器配置 (Gmail)
         Properties props = new Properties();
         props.put("mail.smtp.auth", "true"); // 需要认证
@@ -51,7 +73,7 @@ public class EmailSender {
             message.setFrom(new InternetAddress(SENDER_USER));
             // 设置收件人地址 (可以有多个，用逗号分隔)
             message.setRecipients(Message.RecipientType.TO,
-                    InternetAddress.parse(RECIPIENT_EMAILS));
+                    InternetAddress.parse(recipient));
             // 设置邮件主题
             message.setSubject(subject);
             // 设置邮件内容为 HTML 格式，并指定 UTF-8 编码
@@ -91,6 +113,14 @@ public class EmailSender {
      */
     public static String getRecipientEmails() {
         return RECIPIENT_EMAILS;
+    }
+
+    /**
+     * 辅助方法，获取硬编码的收件人Google Voice号码对应的邮箱列表字符串
+     * @return 收件人Google Voice号码对应的邮箱地址字符串
+     */
+    public static String getRecipientGVs() {
+        return RECIPIENT_GVS;
     }
 
 } // EmailSender 类结束
