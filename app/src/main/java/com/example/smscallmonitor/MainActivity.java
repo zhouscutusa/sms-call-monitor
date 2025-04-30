@@ -33,6 +33,7 @@ public class MainActivity extends AppCompatActivity {
         requestRequiredPermissions();
 
         Button toggleButton = findViewById(R.id.toggleServiceButton);
+        Button settingsButton = findViewById(R.id.settingsButton); // 获取设置按钮
         toggleButton.setText("启动监控服务"); // 设置初始文本
 
         toggleButton.setOnClickListener(v -> {
@@ -68,6 +69,13 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(this, "停止监控服务失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 }
             }
+        });
+
+        // --- 设置按钮的点击事件 ---
+        settingsButton.setOnClickListener(v -> {
+            Log.d(TAG, "Settings button clicked.");
+            Intent settingsIntent = new Intent(MainActivity.this, SettingsActivity.class);
+            startActivity(settingsIntent);
         });
     }
 

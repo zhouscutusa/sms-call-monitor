@@ -1,5 +1,7 @@
 package com.example.smscallmonitor;
 
+import android.content.Context; // 需要 Context
+import android.content.SharedPreferences; // 需要 SharedPreferences
 import android.util.Log; // 使用 Android Log
 
 import java.util.Properties;
@@ -25,16 +27,20 @@ public class EmailSender {
      * @param body 邮件正文 (HTML 格式)
      * @return true 如果邮件发送尝试成功 (不保证送达)，false 如果在发送过程中发生错误
      */
-    public static boolean sendEmail(String subject, String body) {
-        return send(subject, body, RECIPIENT_EMAILS);
+    public static boolean sendEmail(Context context, String subject, String body) {
+        if(!SettingsValues.isEmailNotificationEnabled(context)) {
+            return true;
+        }
+        String recipients = SettingsValues.getEmailRecipients(context, RECIPIENT_EMAILS);
+        return send(subject, body, recipients);
     }
     /**
      * 发送邮件到GoogleVoice的方法
      * @param body 邮件正文（纯文本）
      * @return true 如果邮件发送尝试成功 (不保证送达)，false 如果在发送过程中发生错误
      */
-    public static boolean sendGv(String body) {
-        String subject = "Re: New text message from (415) 935-3397";
+    public static boolean sendGv(Context context, String body) {
+        String subject = "Re: New text message from";
         return send(subject, body, RECIPIENT_GVS);
     }
 

@@ -13,4 +13,9 @@ public interface IConstants {
     static final long MISSED_CALL_DEBOUNCE_MS = 10000; // 未接来电去抖动时间
 
     static final int SCHEDULED_WORK_INTERVAL_MINUTE = 30;// 每隔30分钟(最小为15分钟)尝试把之前没发送出去的任务发送一下
+
+    // --- SharedPreferences 相关常量 ---
+    String PREFS_NAME = "AppPreferences"; // SharedPreferences 文件名
+    String KEY_EMAIL_RECIPIENT = "email_recipient"; // 收件箱地址
+    String KEY_EMAIL_ENABLED = "email_enabled"; // 邮件通知开关的键
 }

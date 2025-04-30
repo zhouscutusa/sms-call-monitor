@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    tools:context=".SettingsActivity">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="应用设置"
+        android:textSize="20sp"
+        android:layout_marginBottom="20dp"/>
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/emailNotificationSwitch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="启用邮件通知"
+        android:textSize="20sp"
+        android:layout_marginBottom="16dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="接收邮件地址:" />
+
+    <EditText
+        android:id="@+id/recipientEditText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="例如: hello@gmail.com"
+        android:inputType="textUri"
+        android:layout_marginBottom="24dp"/>
+
+    <Button
+        android:id="@+id/saveSettingsButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:text="保存设置" />
+
+</LinearLayout>

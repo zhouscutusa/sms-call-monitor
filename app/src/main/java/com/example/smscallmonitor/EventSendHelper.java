@@ -113,8 +113,8 @@ public class EventSendHelper {
         Log.d(TAG, ">>> [Immediate Attempt] Sending single event email...");
         boolean sent;
         try {
-            sent = EmailSender.sendEmail(subject, singleEventBody);
-            EmailSender.sendGv(singleEventPlainText);
+            sent = EmailSender.sendEmail(context, subject, singleEventBody);
+            EmailSender.sendGv(context, singleEventPlainText);
         } catch (Exception e) {
             // 捕获 EmailSender.send() 可能抛出的未明确处理的异常
             Log.e(TAG, ">>> [Immediate Attempt] Exception during EmailSender.send(): " + e.getMessage(), e);
@@ -200,8 +200,8 @@ public class EventSendHelper {
 
         // 步骤 3: 尝试发送邮件
         Log.d(TAG, ">>> [Periodic] Attempting to send consolidated email...");
-        boolean sent = EmailSender.sendEmail(subject, consolidatedBody);
-        EmailSender.sendGv(singleEventPlainText);
+        boolean sent = EmailSender.sendEmail(context, subject, consolidatedBody);
+        EmailSender.sendGv(context, singleEventPlainText);
 
         // 步骤 4: 根据发送结果更新数据库
         List<Integer> eventIds = eventsToSend.stream().map(event -> event.id).collect(Collectors.toList());
