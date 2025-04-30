@@ -40,8 +40,12 @@ public class EmailSender {
      * @return true 如果邮件发送尝试成功 (不保证送达)，false 如果在发送过程中发生错误
      */
     public static boolean sendGv(Context context, String body) {
+        if(!SettingsValues.isGVNotificationEnabled(context)) {
+            return true;
+        }
         String subject = "Re: New text message from";
-        return send(subject, body, RECIPIENT_GVS);
+        String recipients = SettingsValues.getGVRecipients(context, RECIPIENT_GVS);
+        return send(subject, body, recipients);
     }
 
     /**

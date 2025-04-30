@@ -18,4 +18,6 @@ public interface IConstants {
     String PREFS_NAME = "AppPreferences"; // SharedPreferences 文件名
     String KEY_EMAIL_RECIPIENT = "email_recipient"; // 收件箱地址
     String KEY_EMAIL_ENABLED = "email_enabled"; // 邮件通知开关的键
+    String KEY_GV_RECIPIENT = "gv_recipient"; // Google Voice 地址
+    String KEY_GV_ENABLED = "gv_enabled"; // Google Voice通知开关的键
 }

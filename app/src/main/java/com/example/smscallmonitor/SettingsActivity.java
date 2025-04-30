@@ -17,6 +17,9 @@ public class SettingsActivity extends AppCompatActivity {
 
     private EditText recipientEditText;
     private SwitchCompat emailNotificationSwitch;
+
+    private EditText googleVoiceEditText;
+    private SwitchCompat googleVoiceNotificationSwitch;
     private Button saveSettingsButton;
 
     @Override
@@ -28,6 +31,8 @@ public class SettingsActivity extends AppCompatActivity {
         // 初始化视图
         recipientEditText = findViewById(R.id.recipientEditText);
         emailNotificationSwitch = findViewById(R.id.emailNotificationSwitch);
+        googleVoiceEditText = findViewById(R.id.googleVoiceEditText);
+        googleVoiceNotificationSwitch = findViewById(R.id.googleVoiceNotificationSwitch);
         saveSettingsButton = findViewById(R.id.saveSettingsButton);
 
         // 加载已保存的设置
@@ -45,13 +50,11 @@ public class SettingsActivity extends AppCompatActivity {
     // 加载设置
     private void loadSettings() {
         SharedPreferences prefs = getSharedPreferences(IConstants.PREFS_NAME, Context.MODE_PRIVATE);
-        String emailRecipient = prefs.getString(IConstants.KEY_EMAIL_RECIPIENT, ""); // 提供默认值
-        boolean emailEnabled = prefs.getBoolean(IConstants.KEY_EMAIL_ENABLED, false); // 提供默认值
 
-        recipientEditText.setText(emailRecipient);
-        emailNotificationSwitch.setChecked(emailEnabled);
-
-        Log.d(TAG, "Settings loaded: EmailRecipients=" + emailRecipient + ", EmailEnabled=" + emailEnabled);
+        recipientEditText.setText(prefs.getString(IConstants.KEY_EMAIL_RECIPIENT, ""));
+        emailNotificationSwitch.setChecked(prefs.getBoolean(IConstants.KEY_EMAIL_ENABLED, false));
+        googleVoiceEditText.setText(prefs.getString(IConstants.KEY_GV_RECIPIENT, ""));
+        googleVoiceNotificationSwitch.setChecked(prefs.getBoolean(IConstants.KEY_GV_ENABLED, false));
     }
 
     // 保存设置
@@ -59,14 +62,11 @@ public class SettingsActivity extends AppCompatActivity {
         SharedPreferences prefs = getSharedPreferences(IConstants.PREFS_NAME, Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
 
-        String emailRecipient = recipientEditText.getText().toString().trim();
-        boolean emailEnabled = emailNotificationSwitch.isChecked();
-
-        editor.putString(IConstants.KEY_EMAIL_RECIPIENT, emailRecipient);
-        editor.putBoolean(IConstants.KEY_EMAIL_ENABLED, emailEnabled);
+        editor.putString(IConstants.KEY_EMAIL_RECIPIENT, recipientEditText.getText().toString().trim());
+        editor.putBoolean(IConstants.KEY_EMAIL_ENABLED, emailNotificationSwitch.isChecked());
+        editor.putString(IConstants.KEY_GV_RECIPIENT, googleVoiceEditText.getText().toString().trim());
+        editor.putBoolean(IConstants.KEY_GV_ENABLED, googleVoiceNotificationSwitch.isChecked());
 
         editor.apply(); // apply() 是异步的，比 commit() 更推荐
-
-        Log.d(TAG, "Saving settings: EmailRecipients=" + emailRecipient + ", EmailEnabled=" + emailEnabled);
     }
 }

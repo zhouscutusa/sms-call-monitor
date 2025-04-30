@@ -33,6 +33,27 @@
         android:layout_height="wrap_content"
         android:hint="例如: hello@gmail.com"
         android:inputType="textUri"
+        android:layout_marginBottom="16dp"/>
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/googleVoiceNotificationSwitch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="启用短信通知"
+        android:textSize="20sp"
+        android:layout_marginBottom="16dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="GV电话地址:" />
+
+    <EditText
+        android:id="@+id/googleVoiceEditText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="例如: 14150000001.14150000002.DjfieFJeifJFl0@txt.voice.google.com"
+        android:inputType="textUri"
         android:layout_marginBottom="24dp"/>
 
     <Button
