@@ -308,15 +308,16 @@ public class EventSendHelper {
 
         try { // 添加 try-catch 块捕获格式化过程中的潜在异常
             StringBuilder htmlBody = new StringBuilder();
-            String newLine = "\r\n//\r\n";
+            String newMessage = "  ////  ";
+            String newLine = "  | ";
 
             // 根据事件数量调整主标题
             if (events.size() == 1) {
                 PendingEvent singleEvent = events.get(0);
                 String eventTypeDisplay = "SMS".equalsIgnoreCase(singleEvent.eventType) ? "短信" : ("CALL".equalsIgnoreCase(singleEvent.eventType) ? "未接来电" : "事件");
-                htmlBody.append("").append(eventTypeDisplay).append(newLine);
+                htmlBody.append("").append(eventTypeDisplay).append(newMessage);
             } else {
-                htmlBody.append("短信/来电 事件报告 (").append(events.size()).append("条)").append(newLine); // 在标题中显示事件数量
+                htmlBody.append("短信/来电 事件报告 (").append(events.size()).append("条)").append(newMessage); // 在标题中显示事件数量
             }
 //            htmlBody.append("报告生成时间: ").append(TimeUtil.getCurrentFormattedTime()).append(newLine);
 
@@ -325,13 +326,13 @@ public class EventSendHelper {
             for (int i = 0; i < events.size(); i++) {
                 PendingEvent event = events.get(i);
 
-                htmlBody.append("时间: ").append(sdf.format(new Date(event.eventTimestamp))).append(newLine);
+                htmlBody.append(i + 1).append(".时间: ").append(sdf.format(new Date(event.eventTimestamp))).append(newLine);
 
                 String typeStr;
                 if ("SMS".equalsIgnoreCase(event.eventType)) { typeStr = "收到短信"; }
                 else if ("CALL".equalsIgnoreCase(event.eventType)) { typeStr = "未接来电"; }
                 else { typeStr = "未知类型"; }
-//                htmlBody.append("类型: ").append(typeStr).append(newLine);
+                htmlBody.append("类型: ").append(typeStr).append(newLine);
 
                 htmlBody.append("号码: ").append(event.senderNumber).append(newLine);
 
@@ -342,11 +343,11 @@ public class EventSendHelper {
                 htmlBody.append("内容: ").append(contentStr).append(newLine);
 
                 String simDisplay = (event.simInfo != null ? escapeHtml(event.simInfo) : "未知SIM") + " (ID:" + event.subId + ")";
-                int colorIndex = Math.abs(event.subId) % SIM_COLORS.length;
-                String simColor = SIM_COLORS[colorIndex];
-                String simDataStyle = "color: " + simColor + "; font-weight: bold;";
+//                int colorIndex = Math.abs(event.subId) % SIM_COLORS.length;
+//                String simColor = SIM_COLORS[colorIndex];
+//                String simDataStyle = "color: " + simColor + "; font-weight: bold;";
 //                addRowInlineStyle(htmlBody, "SIM卡", simDisplay, simDataStyle);
-                htmlBody.append("SIM卡: ").append(simDisplay).append(newLine).append(newLine);
+                htmlBody.append("SIM卡: ").append(simDisplay).append(newMessage);
 
             }
 
