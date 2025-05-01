@@ -20,4 +20,10 @@ public interface IConstants {
     String KEY_EMAIL_ENABLED = "email_enabled"; // 邮件通知开关的键
     String KEY_GV_RECIPIENT = "gv_recipient"; // Google Voice 地址
     String KEY_GV_ENABLED = "gv_enabled"; // Google Voice通知开关的键
+    String KEY_SERVICE_RUNNING_STATUS = "service_running_status"; // 运行状态标记
+
+    // 本地广播 Action
+    String ACTION_SERVICE_STATUS_CHANGED = "com.example.smscallmonitor.SERVICE_STATUS_CHANGED";
+    // 本地广播 Extra Key (用于传递状态值)
+    String EXTRA_SERVICE_RUNNING_STATUS = "is_service_running";
 }

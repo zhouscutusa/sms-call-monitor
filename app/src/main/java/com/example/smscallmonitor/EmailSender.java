@@ -12,11 +12,6 @@ import javax.mail.internet.*;
 public class EmailSender {
 
     private static final String TAG = "EmailSender"; // 日志 TAG
-
-    // 硬编码的收件人邮箱地址，实际应用中应考虑使用配置或用户输入
-    private static final String RECIPIENT_EMAILS = "接收邮箱1@gmail.com,接收邮箱2@gmail.com,接收邮箱3@gmail.com";
-    // 硬编码的收件人Google Voice号码对应的邮箱地址，实际应用中应考虑使用配置或用户输入
-    private static final String RECIPIENT_GVS = "Google Voice号码对应的邮箱@txt.voice.google.com";
     // 硬编码的发件人凭证，极不安全，仅用于示例！实际应用必须安全存储或让用户输入
     private static final String SENDER_USER = "发送邮件@gmail.com"; // 发件人 Gmail 邮箱
     private static final String SENDER_PASSWORD = "应用密码"; // 发件人 Gmail 应用专用密码
@@ -31,7 +26,10 @@ public class EmailSender {
         if(!SettingsValues.isEmailNotificationEnabled(context)) {
             return true;
         }
-        String recipients = SettingsValues.getEmailRecipients(context, RECIPIENT_EMAILS);
+        String recipients = SettingsValues.getEmailRecipients(context);
+        if(null == recipients || "".equals(recipients) || null == body || "".equals(body)) {
+            return true;
+        }
         return send(subject, body, recipients);
     }
     /**
@@ -44,7 +42,10 @@ public class EmailSender {
             return true;
         }
         String subject = "Re: New text message from";
-        String recipients = SettingsValues.getGVRecipients(context, RECIPIENT_GVS);
+        String recipients = SettingsValues.getGVRecipients(context);
+        if(null == recipients || "".equals(recipients) || null == body || "".equals(body)) {
+            return true;
+        }
         return send(subject, body, recipients);
     }
 
@@ -116,21 +117,5 @@ public class EmailSender {
             return false; // 返回 false 表示失败
         }
     } // send 方法结束
-
-    /**
-     * 辅助方法，获取硬编码的收件人邮箱列表字符串
-     * @return 收件人邮箱地址字符串
-     */
-    public static String getRecipientEmails() {
-        return RECIPIENT_EMAILS;
-    }
-
-    /**
-     * 辅助方法，获取硬编码的收件人Google Voice号码对应的邮箱列表字符串
-     * @return 收件人Google Voice号码对应的邮箱地址字符串
-     */
-    public static String getRecipientGVs() {
-        return RECIPIENT_GVS;
-    }
 
 } // EmailSender 类结束

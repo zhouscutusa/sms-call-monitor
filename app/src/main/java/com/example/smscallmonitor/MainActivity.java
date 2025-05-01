@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.AlarmManager; // 需要 AlarmManager
 import android.app.PendingIntent; // 需要 PendingIntent
 import android.content.Context; // 需要 Context
+import android.content.SharedPreferences;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -16,6 +17,9 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+import android.content.IntentFilter;
+import android.content.BroadcastReceiver;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +27,12 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
     private boolean serviceRunning = false; // 简单状态标记
+    private Button toggleButton;
+    private Button settingsButton;
+
+    // ***用于接收服务状态变化的广播接收器 ***
+    private BroadcastReceiver serviceStatusReceiver;
+    private IntentFilter serviceStatusFilter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -32,14 +42,14 @@ public class MainActivity extends AppCompatActivity {
 
         requestRequiredPermissions();
 
-        Button toggleButton = findViewById(R.id.toggleServiceButton);
-        Button settingsButton = findViewById(R.id.settingsButton); // 获取设置按钮
-        toggleButton.setText("启动监控服务"); // 设置初始文本
+        toggleButton = findViewById(R.id.toggleServiceButton);
+        settingsButton = findViewById(R.id.settingsButton); // 获取设置按钮
 
         toggleButton.setOnClickListener(v -> {
-            Log.d(TAG, "Toggle button clicked. Current serviceRunning state: " + serviceRunning);
+            boolean isActuallyRunning = isServiceRunningFromPrefs(this);
+            Log.d(TAG, "Toggle button clicked. Current serviceRunning state: " + isActuallyRunning);
             Intent intent = new Intent(this, MonitorService.class);
-            if (!serviceRunning) {
+            if (!isActuallyRunning) {
                 Log.d(TAG, "Starting service with ACTION_START_MONITORING");
                 intent.setAction(MonitorService.ACTION_START_MONITORING);
                 try {
@@ -48,9 +58,7 @@ public class MainActivity extends AppCompatActivity {
                     } else {
                         startService(intent);
                     }
-                    toggleButton.setText("停止监控服务");
-                    Toast.makeText(this, "监控服务已启动", Toast.LENGTH_SHORT).show();
-                    serviceRunning = true;
+                    Toast.makeText(this, "监控服务启动请求已发送", Toast.LENGTH_SHORT).show(); // 可以保留 Toast
                 } catch (Exception e) {
                     Log.e(TAG, "Error starting MonitorService: " + e.getMessage(), e);
                     Toast.makeText(this, "启动监控服务失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
@@ -61,9 +69,7 @@ public class MainActivity extends AppCompatActivity {
                     stopService(intent);
                     // 取消闹钟
                     cancelWifiOffAlarmFromActivity(this);
-                    toggleButton.setText("启动监控服务");
-                    Toast.makeText(this, "监控服务已停止", Toast.LENGTH_SHORT).show();
-                    serviceRunning = false;
+                    Toast.makeText(this, "监控服务停止请求已发送", Toast.LENGTH_SHORT).show(); // 可以保留 Toast
                 } catch (Exception e) {
                     Log.e(TAG, "Error stopping MonitorService: " + e.getMessage(), e);
                     Toast.makeText(this, "停止监控服务失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
@@ -77,6 +83,49 @@ public class MainActivity extends AppCompatActivity {
             Intent settingsIntent = new Intent(MainActivity.this, SettingsActivity.class);
             startActivity(settingsIntent);
         });
+
+        // *** 初始化广播接收器和过滤器 ***
+        serviceStatusFilter = new IntentFilter(IConstants.ACTION_SERVICE_STATUS_CHANGED);
+        serviceStatusReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                Log.d(TAG, "Received local broadcast: " + intent.getAction());
+                if (IConstants.ACTION_SERVICE_STATUS_CHANGED.equals(intent.getAction())) {
+                    // 广播携带了最新的服务运行状态，但我们仍然选择从 Prefs 读取以保持一致性
+                    updateButtonStateBasedOnPrefs(); // 从 Prefs 读取并更新
+                    Log.d(TAG, "Button state updated after receiving broadcast.");
+                }
+            }
+        };
+    }
+
+    // *** onResume 方法，用于在 Activity 返回前台时更新按钮状态和注册接收器 ***
+    @Override
+    protected void onResume() {
+        super.onResume();
+        Log.d(TAG, "onResume called - updating button state from Prefs and registering receiver.");
+        // 1. 每次 Activity 可见时，根据 SharedPreferences 更新按钮状态 (处理 Activity 生命周期变化)
+        updateButtonStateBasedOnPrefs();
+
+        // 2. 注册广播接收器，监听服务状态变化 (处理服务运行时状态变化)
+        if (serviceStatusReceiver != null && serviceStatusFilter != null) {
+            LocalBroadcastManager.getInstance(this).registerReceiver(serviceStatusReceiver, serviceStatusFilter);
+            Log.d(TAG, "Service status receiver registered.");
+        } else {
+            Log.e(TAG, "Service status receiver or filter is null in onResume!");
+        }
+    }
+
+    // *** onPause 方法，用于在 Activity 离开前台时取消注册接收器 ***
+    @Override
+    protected void onPause() {
+        super.onPause();
+        Log.d(TAG, "onPause called - unregistering receiver.");
+        // 取消注册广播接收器，防止内存泄漏
+        if (serviceStatusReceiver != null) {
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(serviceStatusReceiver);
+            Log.d(TAG, "Service status receiver unregistered.");
+        }
     }
 
     private void requestRequiredPermissions() {
@@ -141,5 +190,23 @@ public class MainActivity extends AppCompatActivity {
         }
         PendingIntent wifiOffPendingIntent = PendingIntent.getBroadcast(context, IConstants.WIFI_OFF_ALARM_REQUEST_CODE, intent, flags);
         EventSendHelper.cancelWifiOffAlarm(alarmManager, wifiOffPendingIntent);
+    }
+
+    // *** 辅助方法，从 SharedPreferences 读取服务状态 ***
+    private boolean isServiceRunningFromPrefs(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(IConstants.PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getBoolean(IConstants.KEY_SERVICE_RUNNING_STATUS, false); // 默认返回 false
+    }
+
+    // *** 辅助方法，根据 SharedPreferences 更新按钮文本 ***
+    private void updateButtonStateBasedOnPrefs() {
+        if (toggleButton == null) return; // 防止在 onCreate 完成前调用时出错
+        boolean isRunning = isServiceRunningFromPrefs(this);
+        Log.d(TAG, "Updating button text based on Prefs state: " + isRunning);
+        if (isRunning) {
+            toggleButton.setText("停止监控服务");
+        } else {
+            toggleButton.setText("启动监控服务");
+        }
     }
 }

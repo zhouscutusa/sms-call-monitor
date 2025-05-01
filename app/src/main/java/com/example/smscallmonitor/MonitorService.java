@@ -18,6 +18,7 @@ import android.util.Log;
 
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import androidx.work.ExistingPeriodicWorkPolicy; // 引入 WorkManager 类
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
@@ -122,6 +123,8 @@ public class MonitorService extends Service {
 
             if (ACTION_START_MONITORING.equals(action)) {
                 Log.i(TAG,">>> onStartCommand: Handling ACTION_START_MONITORING - Calling startMonitoring()...");
+                setServiceRunningStatus(this, true);
+                Log.d(TAG, ">>> Service status set to RUNNING in SharedPreferences.");
                 startMonitoring();
                 Log.d(TAG, ">>> Scheduling initial Wi-Fi off alarm on service start.");
                 EventSendHelper.resetWifiOffSchedule(alarmManager, wifiOffPendingIntent);
@@ -133,6 +136,8 @@ public class MonitorService extends Service {
             }
         } else {
             Log.d(TAG, ">>> Service restarted with null intent (flags=" + flags + ", startId=" + startId + ")");
+            setServiceRunningStatus(this, true);
+            Log.d(TAG, ">>> Service restarted, status set to RUNNING in SharedPreferences.");
         }
         return START_STICKY;
     }
@@ -409,6 +414,10 @@ public class MonitorService extends Service {
     @Override
     public void onDestroy() {
         Log.d(TAG, ">>> MonitorService onDestroy");
+
+        setServiceRunningStatus(this, false);
+        Log.d(TAG, ">>> Service status set to STOPPED in SharedPreferences.");
+
         stopMonitoring();
         EventSendHelper.cancelWifiOffAlarm(alarmManager, wifiOffPendingIntent);
 
@@ -491,5 +500,24 @@ public class MonitorService extends Service {
         SimPhoneStateListener l = phoneStateListeners.get(subId);
         Log.w(TAG, ">>> Falling back to listener display name for subId: " + subId);
         return (l != null) ? l.simDisplayName + " (ID: " + subId + ")" : "SIM ID " + subId;
+    }
+
+    /**
+     * Updates the service running status in SharedPreferences.
+     * @param context Context
+     * @param isRunning True if the service is running, false otherwise.
+     */
+    private static void setServiceRunningStatus(Context context, boolean isRunning) {
+        // 获取 SharedPreferences 实例
+        SharedPreferences prefs = context.getSharedPreferences(IConstants.PREFS_NAME, Context.MODE_PRIVATE);
+        // 编辑并保存状态
+        prefs.edit().putBoolean(IConstants.KEY_SERVICE_RUNNING_STATUS, isRunning).apply();
+        Log.d(TAG, "Service status in Prefs set to: " + isRunning); // 添加日志方便调试
+
+        // *** 发送本地广播通知状态变化 ***
+        Intent statusIntent = new Intent(IConstants.ACTION_SERVICE_STATUS_CHANGED);
+        statusIntent.putExtra(IConstants.EXTRA_SERVICE_RUNNING_STATUS, isRunning);
+        LocalBroadcastManager.getInstance(context).sendBroadcast(statusIntent);
+        Log.d(TAG, "Sent local broadcast: " + IConstants.ACTION_SERVICE_STATUS_CHANGED + " with status: " + isRunning);
     }
 } // MonitorService 类结束
