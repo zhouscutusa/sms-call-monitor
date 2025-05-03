@@ -13,8 +13,6 @@ public class EmailSender {
 
     private static final String TAG = "EmailSender"; // 日志 TAG
     // 硬编码的发件人凭证，极不安全，仅用于示例！实际应用必须安全存储或让用户输入
-    private static final String SENDER_USER = "发送邮件@gmail.com"; // 发件人 Gmail 邮箱
-    private static final String SENDER_PASSWORD = "应用密码"; // 发件人 Gmail 应用专用密码
 
     /**
      * 发送邮件的方法
@@ -27,10 +25,9 @@ public class EmailSender {
             return true;
         }
         String recipients = SettingsValues.getEmailRecipients(context);
-        if(null == recipients || "".equals(recipients) || null == body || "".equals(body)) {
-            return true;
-        }
-        return send(subject, body, recipients);
+        String emailSender = SettingsValues.getEmailSender(context);
+        String passwd = SettingsValues.getSenderPasswd(context);
+        return send(subject, body, recipients, emailSender, passwd);
     }
     /**
      * 发送邮件到GoogleVoice的方法
@@ -43,10 +40,9 @@ public class EmailSender {
         }
         String subject = "Re: New text message from";
         String recipients = SettingsValues.getGVRecipients(context);
-        if(null == recipients || "".equals(recipients) || null == body || "".equals(body)) {
-            return true;
-        }
-        return send(subject, body, recipients);
+        String emailSender = SettingsValues.getEmailSender(context);
+        String passwd = SettingsValues.getSenderPasswd(context);
+        return send(subject, body, recipients, emailSender, passwd);
     }
 
     /**
@@ -56,7 +52,10 @@ public class EmailSender {
      * @param recipient 收件人
      * @return true 如果邮件发送尝试成功 (不保证送达)，false 如果在发送过程中发生错误
      */
-    public static boolean send(String subject, String body, String recipient) {
+    public static boolean send(String subject, String body, String recipient, String sender, String passwd) {
+        if(null == recipient || "".equals(recipient) || null == body || "".equals(body) || null == sender || "".equals(sender) || null == passwd || "".equals(passwd)) {
+            return true;
+        }
         // SMTP 服务器配置 (Gmail)
         Properties props = new Properties();
         props.put("mail.smtp.auth", "true"); // 需要认证
@@ -73,7 +72,7 @@ public class EmailSender {
                 new javax.mail.Authenticator() { // 匿名内部类实现认证器
                     protected PasswordAuthentication getPasswordAuthentication() {
                         // 返回发件人用户名和密码 (或应用专用密码)
-                        return new PasswordAuthentication(SENDER_USER, SENDER_PASSWORD);
+                        return new PasswordAuthentication(sender, passwd);
                     }
                 });
 
@@ -81,7 +80,7 @@ public class EmailSender {
             // 创建 MimeMessage 对象
             Message message = new MimeMessage(session);
             // 设置发件人地址
-            message.setFrom(new InternetAddress(SENDER_USER));
+            message.setFrom(new InternetAddress(sender));
             // 设置收件人地址 (可以有多个，用逗号分隔)
             message.setRecipients(Message.RecipientType.TO,
                     InternetAddress.parse(recipient));

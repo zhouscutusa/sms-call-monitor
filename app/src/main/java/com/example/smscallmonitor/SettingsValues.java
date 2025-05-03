@@ -35,4 +35,18 @@ public class SettingsValues {
         return prefs.getBoolean(IConstants.KEY_GV_ENABLED, false);
     }
 
+    // 获取发送邮件的地址
+    public static String getEmailSender(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(IConstants.PREFS_NAME, Context.MODE_PRIVATE);
+        // 提供一个空字符串作为默认值
+        return prefs.getString(IConstants.KEY_EMAIL_SENDER, "");
+    }
+
+    // 获取发送邮件的地址
+    public static String getSenderPasswd(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(IConstants.PREFS_NAME, Context.MODE_PRIVATE);
+        // 提供一个空字符串作为默认值
+        return prefs.getString(IConstants.KEY_SEND_PASSWORD, "");
+    }
+
 }

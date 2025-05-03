@@ -21,6 +21,8 @@ public interface IConstants {
     String KEY_GV_RECIPIENT = "gv_recipient"; // Google Voice 地址
     String KEY_GV_ENABLED = "gv_enabled"; // Google Voice通知开关的键
     String KEY_SERVICE_RUNNING_STATUS = "service_running_status"; // 运行状态标记
+    String KEY_EMAIL_SENDER = "email_sender"; // 发送邮箱的地址
+    String KEY_SEND_PASSWORD = "send_password"; // 发送邮箱的应用密码
 
     // 本地广播 Action
     String ACTION_SERVICE_STATUS_CHANGED = "com.example.smscallmonitor.SERVICE_STATUS_CHANGED";
